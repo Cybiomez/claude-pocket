@@ -43,7 +43,11 @@ android {
     buildFeatures { compose = true }
 
     packaging {
-        resources.excludes += setOf("META-INF/AL2.0", "META-INF/LGPL2.1", "META-INF/versions/9/OSGI-INF/MANIFEST.MF")
+        resources.excludes += setOf(
+            "META-INF/AL2.0", "META-INF/LGPL2.1",
+            "META-INF/versions/**", "META-INF/INDEX.LIST",
+            "META-INF/BC1024KE.SF", "META-INF/BC1024KE.DSA", "META-INF/BC2048KE.SF", "META-INF/BC2048KE.DSA",
+        )
     }
 }
 
