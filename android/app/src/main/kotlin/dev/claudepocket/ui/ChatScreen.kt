@@ -279,7 +279,10 @@ private fun StatusFooter(vm: AppViewModel, chat: ChatState) {
                 modifier = Modifier.width(60.dp).height(4.dp).clip(RoundedCornerShape(2.dp)),
             )
             Spacer(Modifier.width(6.dp))
-            Text("контекст ${ctx.percentage}%", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
+            Text(
+                "${fmtTokens(ctx.totalTokens)} / ${fmtTokens(ctx.maxTokens)} (${ctx.percentage}%)",
+                fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
+            )
         }
         Spacer(Modifier.weight(1f))
         if (u != null && u.available) {
@@ -289,6 +292,19 @@ private fun StatusFooter(vm: AppViewModel, chat: ChatState) {
             )
         }
     }
+}
+
+// 24076 -> "24.1k", 1000000 -> "1M"
+private fun fmtTokens(n: Long): String = when {
+    n >= 1_000_000 -> {
+        val m = n / 1_000_000.0
+        if (m % 1.0 < 0.05) "${m.toInt()}M" else String.format(java.util.Locale.US, "%.1fM", m)
+    }
+    n >= 1_000 -> {
+        val k = n / 1_000.0
+        if (k >= 100) "${k.toInt()}k" else String.format(java.util.Locale.US, "%.1fk", k)
+    }
+    else -> n.toString()
 }
 
 @Composable
