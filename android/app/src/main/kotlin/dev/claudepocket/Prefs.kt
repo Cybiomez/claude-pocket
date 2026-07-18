@@ -12,6 +12,9 @@ data class ConnectionPrefs(
     val privateKey: String = "",
     val keyPassphrase: String = "",
     val daemonPort: Int = 8787,
+    // Ключ, сгенерированный самим приложением при первом входе по паролю
+    // и прописанный в authorized_keys сервера. Дальше вход идёт по нему.
+    val deviceKey: String = "",
 ) {
     val isFilled: Boolean
         get() = host.isNotBlank() && user.isNotBlank() &&
@@ -32,6 +35,7 @@ object Prefs {
             privateKey = p.getString("privateKey", "") ?: "",
             keyPassphrase = p.getString("keyPassphrase", "") ?: "",
             daemonPort = p.getInt("daemonPort", 8787),
+            deviceKey = p.getString("deviceKey", "") ?: "",
         )
     }
 
@@ -45,6 +49,7 @@ object Prefs {
             .putString("privateKey", c.privateKey)
             .putString("keyPassphrase", c.keyPassphrase)
             .putInt("daemonPort", c.daemonPort)
+            .putString("deviceKey", c.deviceKey)
             .apply()
     }
 }

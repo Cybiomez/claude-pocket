@@ -94,6 +94,11 @@ fun SetupScreen(vm: AppViewModel) {
 
         if (conn is ConnState.Failed) {
             Text("Ошибка: ${conn.error}", color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+            if (conn.error.contains("Ключ сервера изменился")) {
+                Button(onClick = { vm.forgetHostKey() }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Я уверен, что это мой сервер — забыть старый отпечаток")
+                }
+            }
         }
 
         Button(

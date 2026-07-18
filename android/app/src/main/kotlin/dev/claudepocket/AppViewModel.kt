@@ -86,11 +86,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         conn = ConnState.Connecting("SSH-подключение…")
         viewModelScope.launch {
             try {
+                val known = java.io.File(getApplication<Application>().filesDir, "known_hosts")
                 val t = withContext(Dispatchers.IO) {
                     tunnel?.disconnect()
-                    SshTunnel(p).also { it.connect() }
+                    SshTunnel(p, known).also { it.connect() }
                 }
                 tunnel = t
+                // Приложение прописало свой ключ на сервер — запоминаем приватную часть
+                t.newDeviceKey?.let { savePrefs(prefs.copy(deviceKey = it)) }
                 conn = ConnState.Connecting("Проверка демона…")
                 val a = ApiClient("http://127.0.0.1:${t.localPort}", t.token)
                 if (!a.health()) throw IllegalStateException("Демон не отвечает на порту ${p.daemonPort}. Установлен ли claude-pocketd?")
@@ -114,6 +117,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) { tunnel?.disconnect() }
         api = null
         conn = ConnState.Disconnected
+    }
+
+    // Сбросить сохранённый отпечаток сервера (после переустановки сервера)
+    fun forgetHostKey() {
+        java.io.File(getApplication<Application>().filesDir, "known_hosts").delete()
+        if (conn is ConnState.Failed) conn = ConnState.Disconnected
     }
 
     private fun startSse() {
