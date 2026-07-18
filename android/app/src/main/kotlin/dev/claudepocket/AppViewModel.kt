@@ -70,6 +70,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var activeTab by mutableStateOf<String?>(null)
     val chats = mutableStateMapOf<String, ChatState>()
 
+    // Обновления приложения
+    var update by mutableStateOf<dev.claudepocket.net.UpdateInfo?>(null)
+    var updateProgress by mutableStateOf<Int?>(null)
+
     private var tunnel: SshTunnel? = null
     var api: ApiClient? = null; private set
     private var sseJob: Job? = null
@@ -105,6 +109,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 viewModelScope.launch {
                     runCatching { commands = a.commands() }
                 }
+                viewModelScope.launch {
+                    runCatching { update = dev.claudepocket.net.UpdateChecker.checkIfDue(getApplication()) }
+                }
             } catch (e: Exception) {
                 conn = ConnState.Failed(e.message ?: e.toString())
                 tunnel?.disconnect()
@@ -117,6 +124,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) { tunnel?.disconnect() }
         api = null
         conn = ConnState.Disconnected
+    }
+
+    fun installUpdate() {
+        val info = update ?: return
+        if (updateProgress != null) return
+        viewModelScope.launch {
+            updateProgress = 0
+            try {
+                dev.claudepocket.net.UpdateChecker.downloadAndInstall(getApplication(), info) { updateProgress = it }
+            } catch (_: Exception) { /* остаёмся на плашке — можно повторить */ }
+            updateProgress = null
+        }
     }
 
     // Сбросить сохранённый отпечаток сервера (после переустановки сервера)

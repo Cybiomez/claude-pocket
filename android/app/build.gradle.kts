@@ -5,6 +5,20 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
+// Версия из git-тега: v0.2.0 -> versionName 0.2.0, versionCode 200
+// Без тега (dev-сборка): 0.0.0-dev / 1
+fun gitTagVersion(): Pair<String, Int> {
+    return try {
+        val out = ProcessBuilder("git", "describe", "--tags", "--abbrev=0")
+            .directory(rootDir).redirectErrorStream(true).start()
+            .inputStream.bufferedReader().readText().trim()
+        val m = Regex("^v(\\d+)\\.(\\d+)\\.(\\d+)$").find(out) ?: return "0.0.0-dev" to 1
+        val (maj, min, pat) = m.destructured
+        "$maj.$min.$pat" to (maj.toInt() * 10000 + min.toInt() * 100 + pat.toInt())
+    } catch (_: Exception) { "0.0.0-dev" to 1 }
+}
+val (verName, verCode) = gitTagVersion()
+
 android {
     namespace = "dev.claudepocket"
     compileSdk = 35
@@ -13,16 +27,23 @@ android {
         applicationId = "dev.claudepocket"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = verCode
+        versionName = verName
     }
 
+    // Ключ подписи приходит извне (не хранится в репо):
+    //  - CI: секреты KEYSTORE_* → env
+    //  - локально: android/keystore/claude-pocket.keystore (в .gitignore)
+    val ksPath = System.getenv("KEYSTORE_PATH") ?: "../keystore/claude-pocket.keystore"
+    val ksFile = file(ksPath)
     signingConfigs {
         create("release") {
-            storeFile = file("../keystore/claude-pocket.keystore")
-            storePassword = "claudepocket"
-            keyAlias = "claudepocket"
-            keyPassword = "claudepocket"
+            if (ksFile.exists()) {
+                storeFile = ksFile
+                storePassword = System.getenv("KEYSTORE_PASSWORD") ?: "claudepocket"
+                keyAlias = System.getenv("KEY_ALIAS") ?: "claudepocket"
+                keyPassword = System.getenv("KEY_PASSWORD") ?: "claudepocket"
+            }
         }
     }
 
@@ -30,9 +51,10 @@ android {
         release {
             // Без minify: не воюем с R8-правилами для JSch/BouncyCastle, размер не критичен
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
+            if (ksFile.exists()) signingConfig = signingConfigs.getByName("release")
         }
     }
+
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -40,7 +62,10 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 
     packaging {
         resources.excludes += setOf(
@@ -57,6 +82,7 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
