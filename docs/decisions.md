@@ -49,6 +49,21 @@
 - Пароль/ключ SSH в SharedPreferences без шифрования (приватное app-хранилище).
   План: EncryptedSharedPreferences / Keystore.
 
+## Дистрибуция и обновления (19-07-2026, согласовано с Алексеем)
+
+- **Хранение**: публичный GitHub-репозиторий `Cybiomez/claude-pocket`, APK — в GitHub Releases.
+- **Версионирование**: semver из git-тега. `v0.2.0` → `versionName 0.2.0`, `versionCode 200`
+  (major·10000 + minor·100 + patch). Без тега — `0.0.0-dev`. `CHANGELOG.md` в корне.
+- **Сборка**: GitHub Actions (`.github/workflows/release.yml`) — пуш тега `v*` собирает,
+  подписывает (keystore из секретов: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`,
+  `KEY_PASSWORD`) и публикует релиз с APK. Keystore в git не попадал (`*.keystore` в
+  .gitignore с первого коммита); base64 для секрета — `~/Downloads/claude-pocket-keystore.base64`,
+  бэкап — `~/Downloads/claude-pocket.keystore.backup` (терять нельзя — подпись обновлений).
+- **Автообновление в приложении**: раз в сутки (или при принудительной проверке) запрос
+  `api.github.com/repos/…/releases/latest`, сравнение semver, плашка на экране сессий →
+  скачивание APK в кэш → системный установщик (FileProvider + REQUEST_INSTALL_PACKAGES).
+  Подпись одна — ставится поверх.
+
 ## Отложено (в пайплайн)
 
 - Пуши (нужен foreground-service с постоянным SSE + RemoteInput) — задача 6 пайплайна
