@@ -23,7 +23,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Key
@@ -92,6 +94,17 @@ private fun ConnectionList(vm: AppViewModel) {
                 )
             }
             val uriHandler = LocalUriHandler.current
+            // Переключатель канала обновлений: latest / dev
+            val devOn = vm.updateChannel == dev.claudepocket.net.UpdateChecker.CHANNEL_DEV
+            IconButton(onClick = { vm.toggleChannel() }) {
+                Icon(
+                    Icons.Filled.Science,
+                    if (devOn) "Канал dev включён" else "Включить канал dev",
+                    Modifier.size(20.dp),
+                    tint = if (devOn) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f),
+                )
+            }
             IconButton(onClick = { uriHandler.openUri(dev.claudepocket.net.UpdateChecker.REPO_URL) }) {
                 Icon(
                     GitHubIcon, "Репозиторий на GitHub", Modifier.size(20.dp),
@@ -303,10 +316,19 @@ private fun ConnectionForm(vm: AppViewModel) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Spacer(Modifier.height(24.dp))
-        Text(
-            if (isEdit) "Подключение" else "Новое подключение",
-            style = MaterialTheme.typography.headlineMedium,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // Стрелка «назад к списку» — видима, только если есть куда вернуться
+            if (canGoBack) {
+                IconButton(onClick = close, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "К списку подключений")
+                }
+                Spacer(Modifier.width(8.dp))
+            }
+            Text(
+                if (isEdit) "Подключение" else "Новое подключение",
+                style = MaterialTheme.typography.headlineMedium,
+            )
+        }
         Text(
             "Подключение к своему серверу с Claude Code по SSH",
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f), fontSize = 14.sp,

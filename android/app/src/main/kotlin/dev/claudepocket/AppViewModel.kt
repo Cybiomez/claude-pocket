@@ -205,13 +205,28 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         conn = ConnState.Disconnected
     }
 
+    // Канал обновлений: latest (стабильные) / dev (плюс pre-release)
+    var updateChannel by mutableStateOf(
+        dev.claudepocket.net.UpdateChecker.channel(app)
+    )
+
+    fun toggleChannel() {
+        val next = if (updateChannel == dev.claudepocket.net.UpdateChecker.CHANNEL_DEV)
+            dev.claudepocket.net.UpdateChecker.CHANNEL_LATEST
+        else dev.claudepocket.net.UpdateChecker.CHANNEL_DEV
+        updateChannel = next
+        dev.claudepocket.net.UpdateChecker.setChannel(getApplication(), next)
+        toast(if (next == dev.claudepocket.net.UpdateChecker.CHANNEL_DEV) "Канал dev: включены тестовые сборки" else "Канал: только стабильные релизы")
+        checkUpdates()
+    }
+
     // Проверка обновлений по кнопке — без суточного интервала, результат тостом внизу экрана
     fun checkUpdates() {
         if (updateChecking) return
         viewModelScope.launch {
             updateChecking = true
             try {
-                val info = dev.claudepocket.net.UpdateChecker.check()
+                val info = dev.claudepocket.net.UpdateChecker.check(updateChannel)
                 if (info != null) update = info
                 else toast("Установлена последняя версия (${BuildConfig.VERSION_NAME})")
             } catch (e: Exception) {
@@ -355,6 +370,46 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
+    // Прикреплённые, но ещё не отправленные файлы (по вкладкам)
+    data class PendingAttachment(val name: String, val mime: String, val base64: String, val isImage: Boolean)
+
+    val pendingAttachments = mutableStateMapOf<String, List<PendingAttachment>>()
+
+    // Картинкой в диалог уходят только форматы, которые принимает API Claude
+    private val imageMimes = setOf("image/jpeg", "image/png", "image/gif", "image/webp")
+
+    fun addAttachment(tab: String, uri: android.net.Uri) {
+        viewModelScope.launch {
+            try {
+                val att = withContext(Dispatchers.IO) {
+                    val cr = getApplication<Application>().contentResolver
+                    val mime = cr.getType(uri) ?: "application/octet-stream"
+                    var name = "file"
+                    cr.query(uri, null, null, null, null)?.use { c ->
+                        val idx = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                        if (idx >= 0 && c.moveToFirst()) name = c.getString(idx) ?: name
+                    }
+                    val bytes = cr.openInputStream(uri)?.use { it.readBytes() }
+                        ?: throw IllegalStateException("не удалось прочитать файл")
+                    check(bytes.size <= 8 * 1024 * 1024) { "файл больше 8 МБ" }
+                    PendingAttachment(
+                        name = name, mime = mime,
+                        base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP),
+                        isImage = mime in imageMimes,
+                    )
+                }
+                pendingAttachments[tab] = (pendingAttachments[tab] ?: emptyList()) + att
+            } catch (e: Exception) {
+                toast("Файл не прикреплён: ${e.message}")
+            }
+        }
+    }
+
+    fun removeAttachment(tab: String, index: Int) {
+        val list = pendingAttachments[tab] ?: return
+        pendingAttachments[tab] = list.filterIndexed { i, _ -> i != index }
+    }
+
     private var keyCounter = 0
     private fun keyOf() = "live-${++keyCounter}"
 
@@ -444,15 +499,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun sendMessage(tabKey: String, text: String, attachments: List<kotlinx.serialization.json.JsonObject> = emptyList()) {
+    fun sendMessage(tabKey: String, text: String) {
         val a = api ?: return
         val chat = chats[tabKey] ?: return
-        chat.items = chat.items + ChatItem.Text("user", text, keyOf())
+        val atts = pendingAttachments.remove(tabKey) ?: emptyList()
+        val shown = if (atts.isEmpty()) text
+        else text + "\n" + atts.joinToString("\n") { "📎 ${it.name}" }
+        chat.items = chat.items + ChatItem.Text("user", shown, keyOf())
         chat.running = true
         viewModelScope.launch {
             try {
+                // Сначала грузим файлы на сервер; демон сам решает, что картинка, а что путь
+                val uploaded = atts.map { att -> a.upload(att.name, att.mime, att.base64) }
                 val isNew = tabKey.startsWith("new-")
-                val (_, sessionKey) = a.send(if (isNew) null else tabKey, text, attachments)
+                val (_, sessionKey) = a.send(if (isNew) null else tabKey, text, uploaded)
                 if (isNew && sessionKey != tabKey) {
                     // Демон вернул свой temp-ключ; события session.created придёт с реальным id
                     remapTab(tabKey, sessionKey)
@@ -460,6 +520,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: Exception) {
                 chat.running = false
                 chat.items = chat.items + ChatItem.SystemNote("Не отправлено: ${e.message}", keyOf())
+                // Файлы возвращаем в прикреплённые, чтобы не выбирать заново
+                if (atts.isNotEmpty()) pendingAttachments[tabKey] = atts
             }
         }
     }

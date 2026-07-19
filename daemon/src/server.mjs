@@ -125,7 +125,9 @@ const server = http.createServer(async (req, res) => {
       fs.mkdirSync(dir, { recursive: true });
       const full = path.join(dir, crypto.randomBytes(4).toString('hex') + '-' + name);
       fs.writeFileSync(full, data);
-      const isImage = /^image\//.test(body.mime ?? '');
+      // Картинкой в диалог уходят только форматы, которые принимает API Claude;
+      // остальное (включая heic и прочую экзотику) — файлом по пути
+      const isImage = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(body.mime ?? '');
       return json(res, 200, {
         path: full,
         attachment: isImage
