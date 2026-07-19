@@ -31,34 +31,33 @@ object UpdateChecker {
         val last = p.getLong("lastCheck", 0)
         if (!force && System.currentTimeMillis() - last < CHECK_INTERVAL_MS) return null
         p.edit().putLong("lastCheck", System.currentTimeMillis()).apply()
-        return check()
+        return try { check() } catch (_: Exception) { null }
     }
 
+    // null = обновления нет; сетевые/прочие ошибки пробрасываются наружу
     suspend fun check(): UpdateInfo? = withContext(Dispatchers.IO) {
-        try {
-            val req = Request.Builder()
-                .url("https://api.github.com/repos/$REPO/releases/latest")
-                .header("Accept", "application/vnd.github+json")
-                .header("User-Agent", "claude-pocket/${BuildConfig.VERSION_NAME}")
-                .build()
-            http.newCall(req).execute().use { r ->
-                if (!r.isSuccessful) return@withContext null
-                val o = json.parseToJsonElement(r.body!!.string()).jsonObject
-                val tag = o["tag_name"]?.jsonPrimitive?.contentOrNull ?: return@withContext null
-                val version = tag.removePrefix("v")
-                if (!isNewer(version, BuildConfig.VERSION_NAME)) return@withContext null
-                val apk = o["assets"]?.jsonArray
-                    ?.map { it.jsonObject }
-                    ?.firstOrNull { it["name"]?.jsonPrimitive?.contentOrNull?.endsWith(".apk") == true }
-                    ?.get("browser_download_url")?.jsonPrimitive?.contentOrNull ?: return@withContext null
-                UpdateInfo(
-                    version = version,
-                    apkUrl = apk,
-                    releaseUrl = o["html_url"]?.jsonPrimitive?.contentOrNull ?: "",
-                    notes = (o["body"]?.jsonPrimitive?.contentOrNull ?: "").take(500),
-                )
-            }
-        } catch (_: Exception) { null }
+        val req = Request.Builder()
+            .url("https://api.github.com/repos/$REPO/releases/latest")
+            .header("Accept", "application/vnd.github+json")
+            .header("User-Agent", "claude-pocket/${BuildConfig.VERSION_NAME}")
+            .build()
+        http.newCall(req).execute().use { r ->
+            if (!r.isSuccessful) throw IllegalStateException("GitHub ответил HTTP ${r.code}")
+            val o = json.parseToJsonElement(r.body!!.string()).jsonObject
+            val tag = o["tag_name"]?.jsonPrimitive?.contentOrNull ?: return@withContext null
+            val version = tag.removePrefix("v")
+            if (!isNewer(version, BuildConfig.VERSION_NAME)) return@withContext null
+            val apk = o["assets"]?.jsonArray
+                ?.map { it.jsonObject }
+                ?.firstOrNull { it["name"]?.jsonPrimitive?.contentOrNull?.endsWith(".apk") == true }
+                ?.get("browser_download_url")?.jsonPrimitive?.contentOrNull ?: return@withContext null
+            UpdateInfo(
+                version = version,
+                apkUrl = apk,
+                releaseUrl = o["html_url"]?.jsonPrimitive?.contentOrNull ?: "",
+                notes = (o["body"]?.jsonPrimitive?.contentOrNull ?: "").take(500),
+            )
+        }
     }
 
     // Сравнение semver: 0.3.0 новее 0.2.1. Dev-сборки (0.0.0-dev) обновляются всегда.

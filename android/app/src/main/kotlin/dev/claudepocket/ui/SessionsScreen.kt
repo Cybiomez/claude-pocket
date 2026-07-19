@@ -52,7 +52,7 @@ fun SessionsScreen(vm: AppViewModel) {
         },
     ) { pad ->
         Column(Modifier.fillMaxSize().padding(pad)) {
-            UpdateBanner(vm)
+            Box(Modifier.padding(horizontal = 16.dp)) { UpdateBanner(vm) }
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -62,10 +62,12 @@ fun SessionsScreen(vm: AppViewModel) {
                     UsageLine(vm)
                 }
                 if (vm.sessionsLoading) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                UpdateCheckButton(vm)
                 IconButton(onClick = { vm.refreshSessions(); vm.refreshUsage() }) {
                     Icon(Icons.Filled.Refresh, "Обновить")
                 }
             }
+            UpdateMessageLine(vm, Modifier.padding(horizontal = 16.dp))
             LazyColumn(
                 Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -102,32 +104,6 @@ fun SessionsScreen(vm: AppViewModel) {
                         }
                     }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun UpdateBanner(vm: AppViewModel) {
-    val u = vm.update ?: return
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-    ) {
-        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Доступна версия ${u.version}", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                val p = vm.updateProgress
-                Text(
-                    if (p != null) "Скачивание… $p%" else "Нажми, чтобы скачать и установить",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                )
-            }
-            if (vm.updateProgress == null) {
-                androidx.compose.material3.TextButton(onClick = { vm.installUpdate() }) { Text("Обновить") }
-            } else {
-                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
             }
         }
     }

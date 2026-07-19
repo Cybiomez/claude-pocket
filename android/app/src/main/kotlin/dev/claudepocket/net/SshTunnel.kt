@@ -21,6 +21,8 @@ import java.util.Properties
 class SshTunnel(
     private val prefs: ConnectionPrefs,
     private val knownHostsFile: File,
+    // false = разовое подключение: ключ устройства на сервер не прописываем
+    private val enroll: Boolean = true,
 ) {
     private var session: Session? = null
     var localPort: Int = -1
@@ -59,6 +61,8 @@ class SshTunnel(
         val cfg = Properties()
         // Первый раз — принимаем и запоминаем; дальше — строгая проверка по known_hosts.
         cfg["StrictHostKeyChecking"] = if (firstUse) "no" else "yes"
+        // Сначала ключ (устройства или пользовательский), пароль — запасной путь
+        cfg["PreferredAuthentications"] = "publickey,password,keyboard-interactive"
         s.setConfig(cfg)
         s.timeout = 15000
         s.serverAliveInterval = 15000
@@ -85,7 +89,7 @@ class SshTunnel(
         check(token.isNotBlank()) { "Токен демона не найден — установлен ли claude-pocketd на сервере?" }
 
         // Первый вход по паролю без ключа устройства → генерируем и прописываем
-        if (prefs.deviceKey.isBlank() && prefs.password.isNotBlank()) {
+        if (enroll && prefs.deviceKey.isBlank() && prefs.password.isNotBlank()) {
             try { newDeviceKey = enrollDeviceKey(jsch) } catch (_: Exception) { /* не критично — остаёмся на пароле */ }
         }
     }
