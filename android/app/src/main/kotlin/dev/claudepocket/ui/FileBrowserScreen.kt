@@ -21,6 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -58,6 +59,10 @@ fun FileBrowserScreen(vm: AppViewModel) {
                     shortenPath(entry.path), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f),
                 )
+            }
+            // Сразу в список сессий из любой глубины — не жать «назад» многократно
+            IconButton(onClick = { vm.closeFileBrowser() }) {
+                Icon(Icons.AutoMirrored.Filled.List, "К списку сессий", Modifier.size(22.dp))
             }
         }
 
