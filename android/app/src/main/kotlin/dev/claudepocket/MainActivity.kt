@@ -21,7 +21,8 @@ private val DarkScheme = darkColorScheme(
     secondary = Color(0xFFB8A99A),
     background = Color(0xFF1F1E1D),
     surface = Color(0xFF262524),
-    surfaceVariant = Color(0xFF31302E),
+    // Темнее surface — на нём пузыри ответов ассистента читаются как «чуть темнее»
+    surfaceVariant = Color(0xFF1A1918),
     onBackground = Color(0xFFEDEAE6),
     onSurface = Color(0xFFEDEAE6),
 )
