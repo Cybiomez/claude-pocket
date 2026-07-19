@@ -53,16 +53,16 @@ fun FileBrowserScreen(vm: AppViewModel) {
             IconButton(onClick = { navigateUp(vm, entry) }) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад")
             }
+            // Рядом с «Назад»: сразу в список сессий из любой глубины каталогов
+            IconButton(onClick = { vm.closeFileBrowser() }) {
+                Icon(Icons.AutoMirrored.Filled.List, "К списку сессий", Modifier.size(22.dp))
+            }
             Column(Modifier.weight(1f)) {
                 Text("Файлы", style = MaterialTheme.typography.titleMedium)
                 if (entry != null) Text(
                     shortenPath(entry.path), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f),
                 )
-            }
-            // Сразу в список сессий из любой глубины — не жать «назад» многократно
-            IconButton(onClick = { vm.closeFileBrowser() }) {
-                Icon(Icons.AutoMirrored.Filled.List, "К списку сессий", Modifier.size(22.dp))
             }
         }
 
