@@ -58,7 +58,16 @@ class ChatState {
 }
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
-    var prefs by mutableStateOf(Prefs.load(app))
+    // Сохранённые подключения (порядок = порядок карточек) и активное подключение
+    var connections by mutableStateOf<List<ConnectionPrefs>>(emptyList())
+        private set
+    var active by mutableStateOf<ConnectionPrefs?>(null)
+        private set
+
+    // Навигация экрана входа: список ↔ форма (editing == null → новое подключение)
+    var showForm by mutableStateOf(false)
+    var editing by mutableStateOf<ConnectionPrefs?>(null)
+
     var conn by mutableStateOf<ConnState>(ConnState.Disconnected)
     var sessions by mutableStateOf<List<SessionInfo>>(emptyList())
     var sessionsLoading by mutableStateOf(false)
@@ -73,36 +82,76 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // Обновления приложения
     var update by mutableStateOf<dev.claudepocket.net.UpdateInfo?>(null)
     var updateProgress by mutableStateOf<Int?>(null)
+    var updateChecking by mutableStateOf(false)
+    var updateMessage by mutableStateOf<String?>(null)
 
     private var tunnel: SshTunnel? = null
     var api: ApiClient? = null; private set
     private var sseJob: Job? = null
     private var lastSeq = 0L
 
-    fun savePrefs(p: ConnectionPrefs) {
-        prefs = p
-        Prefs.save(getApplication(), p)
+    init {
+        viewModelScope.launch {
+            val list = withContext(Dispatchers.IO) { ConnectionStore.load(app) }
+            connections = list
+            // Первый запуск без сохранённых подключений — сразу открываем форму
+            if (list.isEmpty()) showForm = true
+        }
     }
 
-    fun connect() {
+    private fun persist() {
+        val list = connections
+        viewModelScope.launch(Dispatchers.IO) { ConnectionStore.save(getApplication(), list) }
+    }
+
+    // Добавить или обновить подключение в списке; возвращает вариант с заполненным id
+    fun upsertConnection(c: ConnectionPrefs): ConnectionPrefs {
+        val withId = if (c.id.isBlank()) c.copy(id = ConnectionStore.newId()) else c
+        connections = if (connections.any { it.id == withId.id })
+            connections.map { if (it.id == withId.id) withId else it }
+        else connections + withId
+        persist()
+        return withId
+    }
+
+    fun deleteConnection(id: String) {
+        connections = connections.filterNot { it.id == id }
+        persist()
+    }
+
+    fun moveConnection(from: Int, to: Int) {
+        if (from == to || from !in connections.indices || to !in connections.indices) return
+        connections = connections.toMutableList().also { it.add(to, it.removeAt(from)) }
+        persist()
+    }
+
+    // remember=false — разовое подключение: не сохраняем и не прописываем ключ на сервер
+    fun connect(c0: ConnectionPrefs, remember: Boolean = true) {
         if (conn is ConnState.Connecting) return
-        val p = prefs
+        val p = if (remember) upsertConnection(c0) else c0
+        active = p
         conn = ConnState.Connecting("SSH-подключение…")
         viewModelScope.launch {
             try {
                 val known = java.io.File(getApplication<Application>().filesDir, "known_hosts")
                 val t = withContext(Dispatchers.IO) {
                     tunnel?.disconnect()
-                    SshTunnel(p, known).also { it.connect() }
+                    SshTunnel(p, known, enroll = remember).also { it.connect() }
                 }
                 tunnel = t
                 // Приложение прописало свой ключ на сервер — запоминаем приватную часть
-                t.newDeviceKey?.let { savePrefs(prefs.copy(deviceKey = it)) }
+                t.newDeviceKey?.let { k ->
+                    val withKey = p.copy(deviceKey = k)
+                    active = withKey
+                    if (remember) upsertConnection(withKey)
+                }
                 conn = ConnState.Connecting("Проверка демона…")
                 val a = ApiClient("http://127.0.0.1:${t.localPort}", t.token)
                 if (!a.health()) throw IllegalStateException("Демон не отвечает на порту ${p.daemonPort}. Установлен ли claude-pocketd?")
                 api = a
                 conn = ConnState.Connected
+                showForm = false
+                editing = null
                 startSse()
                 refreshSessions()
                 refreshUsage()
@@ -119,11 +168,34 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private fun reconnect() {
+        active?.let { connect(it, remember = it.id.isNotBlank()) }
+    }
+
     fun disconnect() {
         sseJob?.cancel()
         viewModelScope.launch(Dispatchers.IO) { tunnel?.disconnect() }
         api = null
         conn = ConnState.Disconnected
+    }
+
+    // Проверка обновлений по кнопке — без суточного интервала, с явным результатом
+    fun checkUpdates() {
+        if (updateChecking) return
+        viewModelScope.launch {
+            updateChecking = true
+            updateMessage = null
+            try {
+                val info = dev.claudepocket.net.UpdateChecker.check()
+                if (info != null) update = info
+                else updateMessage = "У тебя последняя версия (${BuildConfig.VERSION_NAME})"
+            } catch (e: Exception) {
+                updateMessage = "Не удалось проверить: ${e.message ?: "нет сети"}"
+            }
+            updateChecking = false
+            delay(5000)
+            updateMessage = null
+        }
     }
 
     fun installUpdate() {
@@ -161,7 +233,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     // Обрыв — SSH мог умереть. Пробуем переподключить туннель целиком.
                     if (conn is ConnState.Connected) {
                         val alive = withContext(Dispatchers.IO) { tunnel?.isConnected == true && api?.health() == true }
-                        if (!alive) { conn = ConnState.Disconnected; connect(); break }
+                        if (!alive) { conn = ConnState.Disconnected; reconnect(); break }
                     } else break
                 }
                 delay(2000)

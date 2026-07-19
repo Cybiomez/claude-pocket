@@ -5,7 +5,10 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- Бэкап запрещён: в данных приложения лежат пароли и SSH-ключи,
+         в облако (Google-бэкап) они уходить не должны -->
     <application
+        android:allowBackup="false"
         android:label="Claude Pocket"
         android:icon="@mipmap/ic_launcher"
         android:theme="@style/Theme.ClaudePocket"
