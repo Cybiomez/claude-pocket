@@ -46,20 +46,28 @@ fun UpdateBanner(vm: AppViewModel) {
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
     ) {
+        val p = vm.updateProgress
+        val downloaded = vm.downloadedApk != null
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Доступна версия ${u.version}", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                val p = vm.updateProgress
                 Text(
-                    if (p != null) "Скачивание… $p%" else "Готова к скачиванию и установке",
+                    when {
+                        p != null -> "Скачивание… $p%"
+                        downloaded -> "Скачано — нажмите «Установить»"
+                        else -> "Нажмите «Обновить», чтобы скачать"
+                    },
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 )
             }
-            if (vm.updateProgress == null) {
-                TextButton(onClick = { vm.installUpdate() }) { Text("Обновить") }
-            } else {
-                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            when {
+                // Идёт скачивание — прогресс
+                p != null -> CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                // Уже скачано — кнопка запуска установки (можно жать повторно)
+                downloaded -> TextButton(onClick = { vm.installDownloaded() }) { Text("Установить") }
+                // Ещё не скачано — кнопка скачивания
+                else -> TextButton(onClick = { vm.downloadUpdate() }) { Text("Обновить") }
             }
         }
     }
