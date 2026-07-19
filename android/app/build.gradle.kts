@@ -5,16 +5,20 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
-// Версия из git-тега: v0.2.0 -> versionName 0.2.0, versionCode 200
-// Без тега (dev-сборка): 0.0.0-dev / 1
+// Версия из git-тега: v0.2.0 -> versionName 0.2.0, versionCode 200.
+// Pre-release: v0.4.0-dev.1 -> versionName 0.4.0-dev.1, versionCode по базовой 0.4.0 (400).
+// Без тега (локальная dev-сборка): 0.0.0-dev / 1.
 fun gitTagVersion(): Pair<String, Int> {
     return try {
         val out = ProcessBuilder("git", "describe", "--tags", "--abbrev=0")
             .directory(rootDir).redirectErrorStream(true).start()
             .inputStream.bufferedReader().readText().trim()
-        val m = Regex("^v(\\d+)\\.(\\d+)\\.(\\d+)$").find(out) ?: return "0.0.0-dev" to 1
-        val (maj, min, pat) = m.destructured
-        "$maj.$min.$pat" to (maj.toInt() * 10000 + min.toInt() * 100 + pat.toInt())
+        // Суффикс -dev.N и т.п. попадает в versionName, но не в versionCode:
+        // versionCode считается по базовой X.Y.Z, чтобы pre-release вставал поверх прошлого релиза
+        val m = Regex("^v(\\d+)\\.(\\d+)\\.(\\d+)(-[0-9A-Za-z.]+)?$").find(out) ?: return "0.0.0-dev" to 1
+        val maj = m.groupValues[1]; val min = m.groupValues[2]; val pat = m.groupValues[3]
+        val suffix = m.groupValues[4]
+        "$maj.$min.$pat$suffix" to (maj.toInt() * 10000 + min.toInt() * 100 + pat.toInt())
     } catch (_: Exception) { "0.0.0-dev" to 1 }
 }
 val (verName, verCode) = gitTagVersion()

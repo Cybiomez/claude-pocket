@@ -55,3 +55,6 @@ jobs:
         with:
           files: claude-pocket-${{ github.ref_name }}.apk
           generate_release_notes: true
+          # Тег с суффиксом (v0.4.0-dev.1) публикуется как pre-release:
+          # канал latest его пропускает, канал dev в приложении — подхватывает
+          prerelease: ${{ contains(github.ref_name, '-') }}
