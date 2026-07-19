@@ -34,6 +34,10 @@ class SshTunnel(
     var newDeviceKey: String? = null
         private set
 
+    // Причина, по которой ключ устройства прописать не удалось (для показа пользователю)
+    var enrollError: String? = null
+        private set
+
     val isConnected: Boolean get() = session?.isConnected == true
 
     fun connect() {
@@ -88,9 +92,14 @@ class SshTunnel(
         token = exec("cat ~/.claude-pocket/token").trim()
         check(token.isNotBlank()) { "Токен демона не найден — установлен ли claude-pocketd на сервере?" }
 
-        // Первый вход по паролю без ключа устройства → генерируем и прописываем
+        // Первый вход по паролю без ключа устройства → генерируем и прописываем.
+        // Неудача не критична (остаёмся на пароле), но и не молчим о ней.
         if (enroll && prefs.deviceKey.isBlank() && prefs.password.isNotBlank()) {
-            try { newDeviceKey = enrollDeviceKey(jsch) } catch (_: Exception) { /* не критично — остаёмся на пароле */ }
+            try {
+                newDeviceKey = enrollDeviceKey(jsch)
+            } catch (e: Exception) {
+                enrollError = e.message ?: e.toString()
+            }
         }
     }
 
@@ -106,13 +115,12 @@ class SshTunnel(
     }
 
     // Генерация пары на устройстве + добавление публичного ключа в authorized_keys.
-    // Возвращает приватный ключ (OpenSSH/PEM-текст) для сохранения в настройках.
+    // Возвращает приватный ключ (PEM-текст) для сохранения в настройках.
+    // Только RSA: ed25519 JSch генерирует, но не умеет сериализовать приватную
+    // часть (writePrivateKey кидает UnsupportedOperationException) — из-за этого
+    // прописывание ключа тихо не работало до v0.3.5.
     private fun enrollDeviceKey(jsch: JSch): String {
-        val kp = try {
-            KeyPair.genKeyPair(jsch, KeyPair.ED25519, 0)
-        } catch (_: Throwable) {
-            KeyPair.genKeyPair(jsch, KeyPair.RSA, 3072)
-        }
+        val kp = KeyPair.genKeyPair(jsch, KeyPair.RSA, 3072)
         val priv = ByteArrayOutputStream().also { kp.writePrivateKey(it) }.toString("UTF-8")
         val pub = ByteArrayOutputStream().also { kp.writePublicKey(it, "claude-pocket-${android.os.Build.MODEL.replace(' ', '-')}") }
             .toString("UTF-8").trim()

@@ -144,6 +144,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     active = withKey
                     if (remember) upsertConnection(withKey)
                 }
+                t.enrollError?.let { toast("Ключ устройства не прописан ($it) — вход остаётся по паролю") }
                 conn = ConnState.Connecting("Проверка демона…")
                 val a = ApiClient("http://127.0.0.1:${t.localPort}", t.token)
                 if (!a.health()) throw IllegalStateException("Демон не отвечает на порту ${p.daemonPort}. Установлен ли claude-pocketd?")
