@@ -179,13 +179,28 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         conn = ConnState.Disconnected
     }
 
+    // Канал обновлений: latest (стабильные) / dev (плюс pre-release)
+    var updateChannel by mutableStateOf(
+        dev.claudepocket.net.UpdateChecker.channel(app)
+    )
+
+    fun toggleChannel() {
+        val next = if (updateChannel == dev.claudepocket.net.UpdateChecker.CHANNEL_DEV)
+            dev.claudepocket.net.UpdateChecker.CHANNEL_LATEST
+        else dev.claudepocket.net.UpdateChecker.CHANNEL_DEV
+        updateChannel = next
+        dev.claudepocket.net.UpdateChecker.setChannel(getApplication(), next)
+        toast(if (next == dev.claudepocket.net.UpdateChecker.CHANNEL_DEV) "Канал dev: включены тестовые сборки" else "Канал: только стабильные релизы")
+        checkUpdates()
+    }
+
     // Проверка обновлений по кнопке — без суточного интервала, результат тостом внизу экрана
     fun checkUpdates() {
         if (updateChecking) return
         viewModelScope.launch {
             updateChecking = true
             try {
-                val info = dev.claudepocket.net.UpdateChecker.check()
+                val info = dev.claudepocket.net.UpdateChecker.check(updateChannel)
                 if (info != null) update = info
                 else toast("Установлена последняя версия (${BuildConfig.VERSION_NAME})")
             } catch (e: Exception) {

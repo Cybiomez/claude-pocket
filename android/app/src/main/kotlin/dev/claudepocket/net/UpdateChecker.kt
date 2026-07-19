@@ -24,6 +24,18 @@ object UpdateChecker {
     const val REPO_URL = "https://github.com/$REPO"
     private const val CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000L
 
+    // Канал обновлений: latest — только стабильные релизы, dev — плюс pre-release из dev-ветки
+    const val CHANNEL_LATEST = "latest"
+    const val CHANNEL_DEV = "dev"
+
+    fun channel(ctx: Context): String =
+        ctx.getSharedPreferences("updates", Context.MODE_PRIVATE).getString("channel", CHANNEL_LATEST) ?: CHANNEL_LATEST
+
+    fun setChannel(ctx: Context, value: String) {
+        ctx.getSharedPreferences("updates", Context.MODE_PRIVATE).edit()
+            .putString("channel", value).putLong("lastCheck", 0).apply() // сброс интервала — сразу перепроверить
+    }
+
     private val http = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).build()
 
@@ -32,19 +44,30 @@ object UpdateChecker {
         val last = p.getLong("lastCheck", 0)
         if (!force && System.currentTimeMillis() - last < CHECK_INTERVAL_MS) return null
         p.edit().putLong("lastCheck", System.currentTimeMillis()).apply()
-        return try { check() } catch (_: Exception) { null }
+        return try { check(channel(ctx)) } catch (_: Exception) { null }
     }
 
-    // null = обновления нет; сетевые/прочие ошибки пробрасываются наружу
-    suspend fun check(): UpdateInfo? = withContext(Dispatchers.IO) {
+    // null = обновления нет; сетевые/прочие ошибки пробрасываются наружу.
+    // latest: /releases/latest (pre-release пропускается GitHub автоматически).
+    // dev: /releases (первый в списке, включая pre-release).
+    suspend fun check(channel: String = CHANNEL_LATEST): UpdateInfo? = withContext(Dispatchers.IO) {
+        val url = if (channel == CHANNEL_DEV)
+            "https://api.github.com/repos/$REPO/releases?per_page=10"
+        else
+            "https://api.github.com/repos/$REPO/releases/latest"
         val req = Request.Builder()
-            .url("https://api.github.com/repos/$REPO/releases/latest")
+            .url(url)
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", "claude-pocket/${BuildConfig.VERSION_NAME}")
             .build()
         http.newCall(req).execute().use { r ->
             if (!r.isSuccessful) throw IllegalStateException("GitHub ответил HTTP ${r.code}")
-            val o = json.parseToJsonElement(r.body!!.string()).jsonObject
+            val el = json.parseToJsonElement(r.body!!.string())
+            // dev — берём самый свежий релиз (не draft), latest — единственный объект
+            val o = if (channel == CHANNEL_DEV)
+                el.jsonArray.map { it.jsonObject }.firstOrNull { it["draft"]?.jsonPrimitive?.contentOrNull != "true" }
+                    ?: return@withContext null
+            else el.jsonObject
             val tag = o["tag_name"]?.jsonPrimitive?.contentOrNull ?: return@withContext null
             val version = tag.removePrefix("v")
             if (!isNewer(version, BuildConfig.VERSION_NAME)) return@withContext null
