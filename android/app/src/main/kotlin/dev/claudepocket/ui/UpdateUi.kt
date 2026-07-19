@@ -51,7 +51,7 @@ fun UpdateBanner(vm: AppViewModel) {
                 Text("Доступна версия ${u.version}", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                 val p = vm.updateProgress
                 Text(
-                    if (p != null) "Скачивание… $p%" else "Нажми, чтобы скачать и установить",
+                    if (p != null) "Скачивание… $p%" else "Готова к скачиванию и установке",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 )

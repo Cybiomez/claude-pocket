@@ -113,7 +113,7 @@ private fun ConnectionList(vm: AppViewModel) {
             Text("Ошибка: ${conn.error}", color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
             if (conn.error.contains("Ключ сервера изменился")) {
                 Button(onClick = { vm.forgetHostKey() }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Я уверен, что это мой сервер — забыть старый отпечаток")
+                    Text("Это точно мой сервер — забыть старый отпечаток")
                 }
             }
         }
@@ -335,7 +335,7 @@ private fun ConnectionForm(vm: AppViewModel) {
         } else {
             OutlinedTextField(
                 privateKey, { privateKey = it },
-                label = { Text("Приватный ключ (вставь текст целиком)") },
+                label = { Text("Приватный ключ (текст целиком)") },
                 placeholder = { Text("-----BEGIN OPENSSH PRIVATE KEY-----…") },
                 modifier = Modifier.fillMaxWidth().height(160.dp),
             )
@@ -375,7 +375,7 @@ private fun ConnectionForm(vm: AppViewModel) {
             Text("Ошибка: ${conn.error}", color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
             if (conn.error.contains("Ключ сервера изменился")) {
                 Button(onClick = { vm.forgetHostKey() }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Я уверен, что это мой сервер — забыть старый отпечаток")
+                    Text("Это точно мой сервер — забыть старый отпечаток")
                 }
             }
         }
