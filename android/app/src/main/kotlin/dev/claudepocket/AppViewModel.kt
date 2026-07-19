@@ -84,9 +84,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var fileEntry by mutableStateOf<dev.claudepocket.net.FileEntry?>(null)
     var fileLoading by mutableStateOf(false)
     var fileError by mutableStateOf<String?>(null)
+    // Абсолютный путь корня доступной области (домашняя папка) — выше него демон не пускает
+    var fileHomeRoot by mutableStateOf<String?>(null)
+        private set
 
     fun openFileBrowser(path: String = "") {
         fileBrowserOpen = true
+        fileHomeRoot = null   // запомним корень при первой загрузке
         loadFile(path)
     }
 
@@ -95,7 +99,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             fileLoading = true; fileError = null
             try {
-                fileEntry = a.file(path)
+                val entry = a.file(path)
+                // Первая загрузка — это домашняя папка; запоминаем её как корень
+                if (fileHomeRoot == null && entry.isDir) fileHomeRoot = entry.path
+                fileEntry = entry
             } catch (e: Exception) {
                 fileError = e.message ?: "не удалось открыть"
             }
@@ -103,7 +110,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun closeFileBrowser() { fileBrowserOpen = false; fileEntry = null; fileError = null }
+    fun closeFileBrowser() { fileBrowserOpen = false; fileEntry = null; fileError = null; fileHomeRoot = null }
 
     // Обновления приложения
     var update by mutableStateOf<dev.claudepocket.net.UpdateInfo?>(null)
@@ -242,18 +249,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         updateChannel = next
         dev.claudepocket.net.UpdateChecker.setChannel(getApplication(), next)
         toast(if (next == dev.claudepocket.net.UpdateChecker.CHANNEL_DEV) "Канал dev: включены тестовые сборки" else "Канал: только стабильные релизы")
-        checkUpdates()
+        checkUpdates(announceUpToDate = false)
     }
 
-    // Проверка обновлений по кнопке — без суточного интервала, результат тостом внизу экрана
-    fun checkUpdates() {
+    // Проверка обновлений по кнопке — без суточного интервала, результат тостом внизу экрана.
+    // announceUpToDate=false — не показывать тост «последняя версия» (при смене канала,
+    // чтобы не перебивать тост о переключении).
+    fun checkUpdates(announceUpToDate: Boolean = true) {
         if (updateChecking) return
         viewModelScope.launch {
             updateChecking = true
             try {
                 val info = dev.claudepocket.net.UpdateChecker.check(updateChannel)
-                if (info != null) update = info
-                else toast("Установлена последняя версия (${BuildConfig.VERSION_NAME})")
+                if (info != null) { update = info; downloadedApk = null }
+                else if (announceUpToDate) toast("Установлена последняя версия (${BuildConfig.VERSION_NAME})")
             } catch (e: Exception) {
                 toast("Не удалось проверить обновления: ${e.message ?: "нет сети"}")
             }
@@ -265,15 +274,32 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         android.widget.Toast.makeText(getApplication(), msg, android.widget.Toast.LENGTH_LONG).show()
     }
 
-    fun installUpdate() {
+    // Файл обновления, уже скачанный и готовый к установке (null — ещё не скачан)
+    var downloadedApk by mutableStateOf<java.io.File?>(null)
+        private set
+
+    // Шаг 1: скачать APK. По завершении кнопка станет «Установить».
+    fun downloadUpdate() {
         val info = update ?: return
         if (updateProgress != null) return
         viewModelScope.launch {
             updateProgress = 0
             try {
-                dev.claudepocket.net.UpdateChecker.downloadAndInstall(getApplication(), info) { updateProgress = it }
-            } catch (_: Exception) { /* остаёмся на плашке — можно повторить */ }
+                downloadedApk = dev.claudepocket.net.UpdateChecker.download(getApplication(), info) { updateProgress = it }
+            } catch (e: Exception) {
+                toast("Не удалось скачать: ${e.message ?: "ошибка сети"}")
+            }
             updateProgress = null
+        }
+    }
+
+    // Шаг 2: запустить установку скачанного файла. Можно нажимать повторно.
+    fun installDownloaded() {
+        val f = downloadedApk ?: return
+        try {
+            dev.claudepocket.net.UpdateChecker.install(getApplication(), f)
+        } catch (e: Exception) {
+            toast("Не удалось запустить установку: ${e.message}")
         }
     }
 
