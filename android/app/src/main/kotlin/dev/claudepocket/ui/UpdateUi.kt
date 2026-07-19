@@ -38,17 +38,6 @@ fun UpdateCheckButton(vm: AppViewModel) {
     }
 }
 
-// Результат ручной проверки: «у тебя последняя версия» / ошибка сети
-@Composable
-fun UpdateMessageLine(vm: AppViewModel, modifier: Modifier = Modifier) {
-    val m = vm.updateMessage ?: return
-    Text(
-        m, fontSize = 12.sp,
-        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.65f),
-        modifier = modifier,
-    )
-}
-
 // Плашка «доступна новая версия» со скачиванием и установкой
 @Composable
 fun UpdateBanner(vm: AppViewModel) {

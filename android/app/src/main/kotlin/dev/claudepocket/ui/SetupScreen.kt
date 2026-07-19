@@ -100,7 +100,6 @@ private fun ConnectionList(vm: AppViewModel) {
             }
             UpdateCheckButton(vm)
         }
-        UpdateMessageLine(vm)
         UpdateBanner(vm)
 
         if (conn is ConnState.Connecting) {

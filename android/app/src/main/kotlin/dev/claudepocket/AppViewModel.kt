@@ -83,7 +83,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var update by mutableStateOf<dev.claudepocket.net.UpdateInfo?>(null)
     var updateProgress by mutableStateOf<Int?>(null)
     var updateChecking by mutableStateOf(false)
-    var updateMessage by mutableStateOf<String?>(null)
 
     private var tunnel: SshTunnel? = null
     var api: ApiClient? = null; private set
@@ -179,23 +178,24 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         conn = ConnState.Disconnected
     }
 
-    // Проверка обновлений по кнопке — без суточного интервала, с явным результатом
+    // Проверка обновлений по кнопке — без суточного интервала, результат тостом внизу экрана
     fun checkUpdates() {
         if (updateChecking) return
         viewModelScope.launch {
             updateChecking = true
-            updateMessage = null
             try {
                 val info = dev.claudepocket.net.UpdateChecker.check()
                 if (info != null) update = info
-                else updateMessage = "У тебя последняя версия (${BuildConfig.VERSION_NAME})"
+                else toast("Установлена последняя версия (${BuildConfig.VERSION_NAME})")
             } catch (e: Exception) {
-                updateMessage = "Не удалось проверить: ${e.message ?: "нет сети"}"
+                toast("Не удалось проверить обновления: ${e.message ?: "нет сети"}")
             }
             updateChecking = false
-            delay(5000)
-            updateMessage = null
         }
+    }
+
+    private fun toast(msg: String) {
+        android.widget.Toast.makeText(getApplication(), msg, android.widget.Toast.LENGTH_LONG).show()
     }
 
     fun installUpdate() {

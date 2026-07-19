@@ -67,7 +67,6 @@ fun SessionsScreen(vm: AppViewModel) {
                     Icon(Icons.Filled.Refresh, "Обновить")
                 }
             }
-            UpdateMessageLine(vm, Modifier.padding(horizontal = 16.dp))
             LazyColumn(
                 Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
