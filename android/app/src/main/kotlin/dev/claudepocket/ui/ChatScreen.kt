@@ -60,10 +60,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.claudepocket.AppViewModel
@@ -319,12 +321,16 @@ private fun fmtTokens(n: Long): String = when {
     else -> n.toString()
 }
 
-// Компактная квадратная кнопка панели ввода (без навязанного тач-таргета IconButton)
+// Компактная квадратная кнопка панели ввода (без навязанного тач-таргета IconButton).
+// Размер задаётся снаружи — панель масштабирует кнопки под ширину экрана.
 @Composable
-private fun SquareBtn(onClick: () -> Unit, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+private fun SquareBtn(
+    onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 28.dp,
+    content: @Composable () -> Unit,
+) {
     Box(
         modifier
-            .size(28.dp)
+            .size(size)
             .clip(RoundedCornerShape(7.dp))
             .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f), RoundedCornerShape(7.dp))
             .clickable(onClick = onClick),
@@ -369,18 +375,23 @@ private fun InputBar(vm: AppViewModel, tab: String, chat: ChatState) {
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.Bottom,
         ) {
-            // Компактные квадратные кнопки: 28dp с иконкой 16dp. Не через IconButton —
-            // он навязывает минимальный тач-таргет 48dp и кнопки наезжают друг на друга.
-            // Отступ снизу 14dp центрует по однострочному полю ввода (56dp).
-            val btnMod = Modifier.padding(bottom = 14.dp)
-            SquareBtn(onClick = { picker.launch("*/*") }, modifier = btnMod) {
-                Icon(Icons.Filled.AttachFile, "Прикрепить файл", Modifier.size(16.dp))
+            // Компактные квадратные кнопки. Не через IconButton — он навязывает
+            // минимальный тач-таргет 48dp и кнопки наезжают друг на друга.
+            // Базовые 28dp/16dp масштабируются под ширину экрана (360dp — эталон),
+            // с ограничением снизу и сверху, чтобы на планшетах не разъезжались.
+            val scale = (LocalConfiguration.current.screenWidthDp / 360f).coerceIn(0.9f, 1.4f)
+            val btnSize = (28f * scale).dp
+            val iconSize = (16f * scale).dp
+            // Отступ снизу центрует кнопку по однострочному полю ввода (56dp): 28 − половина кнопки
+            val btnMod = Modifier.padding(bottom = (28f - 14f * scale).dp)
+            SquareBtn(onClick = { picker.launch("*/*") }, modifier = btnMod, size = btnSize) {
+                Icon(Icons.Filled.AttachFile, "Прикрепить файл", Modifier.size(iconSize))
             }
             Spacer(Modifier.width(6.dp))
             Box {
-                SquareBtn(onClick = { slashOpen = true }, modifier = btnMod) {
+                SquareBtn(onClick = { slashOpen = true }, modifier = btnMod, size = btnSize) {
                     Text(
-                        "/", fontSize = 15.sp, fontFamily = FontFamily.Monospace,
+                        "/", fontSize = (15f * scale).sp, fontFamily = FontFamily.Monospace,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
                     )
                 }
@@ -398,8 +409,8 @@ private fun InputBar(vm: AppViewModel, tab: String, chat: ChatState) {
             }
             Spacer(Modifier.width(6.dp))
             Box {
-                SquareBtn(onClick = { tuneOpen = true }, modifier = btnMod) {
-                    Icon(Icons.Filled.Tune, "Режим", Modifier.size(16.dp))
+                SquareBtn(onClick = { tuneOpen = true }, modifier = btnMod, size = btnSize) {
+                    Icon(Icons.Filled.Tune, "Режим", Modifier.size(iconSize))
                 }
                 TuneMenu(vm, tab, tuneOpen) { tuneOpen = false }
             }
