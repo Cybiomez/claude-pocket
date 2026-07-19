@@ -30,7 +30,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.Tag
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -319,8 +320,16 @@ private fun InputBar(vm: AppViewModel, tab: String, chat: ChatState) {
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.Bottom,
         ) {
+            // Лёгкая окантовка, чтобы читались как кнопки, но не бросались в глаза
+            val buttonOutline = Modifier.padding(bottom = 4.dp).size(42.dp)
+                .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f), CircleShape)
             Box {
-                IconButton(onClick = { slashOpen = true }) { Icon(Icons.Filled.Tag, "Команды") }
+                IconButton(onClick = { slashOpen = true }, modifier = buttonOutline) {
+                    Text(
+                        "/", fontSize = 19.sp, fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                    )
+                }
                 DropdownMenu(expanded = slashOpen, onDismissRequest = { slashOpen = false }) {
                     val cmds = vm.commands.take(30)
                     if (cmds.isEmpty()) DropdownMenuItem(text = { Text("Команды появятся после первого хода") }, onClick = { slashOpen = false })
@@ -333,10 +342,14 @@ private fun InputBar(vm: AppViewModel, tab: String, chat: ChatState) {
                     )
                 }
             }
+            Spacer(Modifier.width(4.dp))
             Box {
-                IconButton(onClick = { tuneOpen = true }) { Icon(Icons.Filled.Tune, "Режим") }
+                IconButton(onClick = { tuneOpen = true }, modifier = buttonOutline) {
+                    Icon(Icons.Filled.Tune, "Режим", Modifier.size(19.dp))
+                }
                 TuneMenu(vm, tab, tuneOpen) { tuneOpen = false }
             }
+            Spacer(Modifier.width(6.dp))
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it },
