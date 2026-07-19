@@ -53,6 +53,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -88,6 +89,13 @@ private fun ConnectionList(vm: AppViewModel) {
                 Text(
                     "Сохранённые подключения",
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f), fontSize = 13.sp,
+                )
+            }
+            val uriHandler = LocalUriHandler.current
+            IconButton(onClick = { uriHandler.openUri(dev.claudepocket.net.UpdateChecker.REPO_URL) }) {
+                Icon(
+                    GitHubIcon, "Репозиторий на GitHub", Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f),
                 )
             }
             UpdateCheckButton(vm)
