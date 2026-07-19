@@ -96,8 +96,11 @@ object UpdateChecker {
     }
 
     // Качаем APK в кэш (с проверкой, что файл докачался целиком) и устанавливаем
-    suspend fun downloadAndInstall(ctx: Context, info: UpdateInfo, onProgress: (Int) -> Unit) {
-        val file = withContext(Dispatchers.IO) {
+    // Только скачивание APK (с проверкой целостности). Возвращает готовый файл;
+    // установку запускает отдельно install() — чтобы кнопку можно было нажать
+    // повторно, если системный установщик замял первую попытку.
+    suspend fun download(ctx: Context, info: UpdateInfo, onProgress: (Int) -> Unit): File =
+        withContext(Dispatchers.IO) {
             val dir = File(ctx.cacheDir, "updates").apply { mkdirs() }
             dir.listFiles()?.forEach { it.delete() }
             val out = File(dir, "claude-pocket-${info.version}.apk")
@@ -119,22 +122,22 @@ object UpdateChecker {
                         }
                     }
                 }
-                // Обрыв закачки даёт у системного установщика невнятное «приложение
-                // не установлено» — лучше поймать здесь и предложить повторить
                 if (total > 0 && out.length() != total) {
                     throw IllegalStateException(
-                        "файл скачался не полностью (${out.length()} из $total байт), нужна повторная попытка"
+                        "файл скачался не полностью (${out.length()} из $total байт), попробуйте ещё раз"
                     )
                 }
             }
             out
         }
-        withContext(Dispatchers.IO) {
-            try {
-                installSelf(ctx, file)
-            } catch (_: Exception) {
-                legacyInstall(ctx, file)
-            }
+
+    // Запуск установки уже скачанного APK. Сначала самообновление через
+    // PackageInstaller, при ошибке — системный установщик через ACTION_VIEW.
+    fun install(ctx: Context, file: File) {
+        try {
+            installSelf(ctx, file)
+        } catch (_: Exception) {
+            legacyInstall(ctx, file)
         }
     }
 
