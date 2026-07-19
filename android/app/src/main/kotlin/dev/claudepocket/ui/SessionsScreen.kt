@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -62,6 +63,9 @@ fun SessionsScreen(vm: AppViewModel) {
                     UsageLine(vm)
                 }
                 if (vm.sessionsLoading) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                IconButton(onClick = { vm.openFileBrowser() }) {
+                    Icon(Icons.Filled.FolderOpen, "Файлы сервера")
+                }
                 UpdateCheckButton(vm)
                 IconButton(onClick = { vm.refreshSessions(); vm.refreshUsage() }) {
                     Icon(Icons.Filled.Refresh, "Обновить")

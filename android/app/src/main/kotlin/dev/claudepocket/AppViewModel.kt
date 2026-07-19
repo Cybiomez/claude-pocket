@@ -79,6 +79,32 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var activeTab by mutableStateOf<String?>(null)
     val chats = mutableStateMapOf<String, ChatState>()
 
+    // Просмотр файлов сервера (read-only)
+    var fileBrowserOpen by mutableStateOf(false)
+    var fileEntry by mutableStateOf<dev.claudepocket.net.FileEntry?>(null)
+    var fileLoading by mutableStateOf(false)
+    var fileError by mutableStateOf<String?>(null)
+
+    fun openFileBrowser(path: String = "") {
+        fileBrowserOpen = true
+        loadFile(path)
+    }
+
+    fun loadFile(path: String) {
+        val a = api ?: return
+        viewModelScope.launch {
+            fileLoading = true; fileError = null
+            try {
+                fileEntry = a.file(path)
+            } catch (e: Exception) {
+                fileError = e.message ?: "не удалось открыть"
+            }
+            fileLoading = false
+        }
+    }
+
+    fun closeFileBrowser() { fileBrowserOpen = false; fileEntry = null; fileError = null }
+
     // Обновления приложения
     var update by mutableStateOf<dev.claudepocket.net.UpdateInfo?>(null)
     var updateProgress by mutableStateOf<Int?>(null)

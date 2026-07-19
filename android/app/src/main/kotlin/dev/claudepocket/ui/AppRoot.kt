@@ -9,6 +9,7 @@ import dev.claudepocket.ConnState
 fun AppRoot(vm: AppViewModel) {
     when {
         vm.conn !is ConnState.Connected -> SetupScreen(vm)
+        vm.fileBrowserOpen -> FileBrowserScreen(vm)
         vm.activeTab != null -> {
             BackHandler { vm.activeTab = null }
             ChatScreen(vm)
