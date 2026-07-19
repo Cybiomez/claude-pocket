@@ -84,9 +84,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var fileEntry by mutableStateOf<dev.claudepocket.net.FileEntry?>(null)
     var fileLoading by mutableStateOf(false)
     var fileError by mutableStateOf<String?>(null)
+    // Абсолютный путь корня доступной области (домашняя папка) — выше него демон не пускает
+    var fileHomeRoot by mutableStateOf<String?>(null)
+        private set
 
     fun openFileBrowser(path: String = "") {
         fileBrowserOpen = true
+        fileHomeRoot = null   // запомним корень при первой загрузке
         loadFile(path)
     }
 
@@ -95,7 +99,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             fileLoading = true; fileError = null
             try {
-                fileEntry = a.file(path)
+                val entry = a.file(path)
+                // Первая загрузка — это домашняя папка; запоминаем её как корень
+                if (fileHomeRoot == null && entry.isDir) fileHomeRoot = entry.path
+                fileEntry = entry
             } catch (e: Exception) {
                 fileError = e.message ?: "не удалось открыть"
             }
@@ -103,7 +110,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun closeFileBrowser() { fileBrowserOpen = false; fileEntry = null; fileError = null }
+    fun closeFileBrowser() { fileBrowserOpen = false; fileEntry = null; fileError = null; fileHomeRoot = null }
 
     // Обновления приложения
     var update by mutableStateOf<dev.claudepocket.net.UpdateInfo?>(null)

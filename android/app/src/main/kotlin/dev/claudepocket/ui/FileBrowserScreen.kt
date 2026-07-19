@@ -78,13 +78,14 @@ fun FileBrowserScreen(vm: AppViewModel) {
     }
 }
 
-// Вверх: из файла — к его каталогу, из каталога — к родителю (пока не корень)
+// Вверх: из корня доступной области (домашней папки) — обратно в список сессий;
+// иначе из файла — к его каталогу, из каталога — к родителю.
 private fun navigateUp(vm: AppViewModel, entry: FileEntry?) {
     if (entry == null) { vm.closeFileBrowser(); return }
+    // В корне (или выше него подниматься нельзя) — закрываем браузер, не дёргая демон
+    if (entry.path == vm.fileHomeRoot) { vm.closeFileBrowser(); return }
     val parent = entry.path.substringBeforeLast('/', "")
-    // Пустой путь = HOME (демон резолвит относительно cwd); дальше вверх не идём
-    if (parent.isBlank() || entry.path.count { it == '/' } <= 1) vm.closeFileBrowser()
-    else vm.loadFile(parent)
+    if (parent.isBlank()) vm.closeFileBrowser() else vm.loadFile(parent)
 }
 
 @Composable
