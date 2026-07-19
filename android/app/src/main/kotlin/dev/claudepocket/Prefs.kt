@@ -1,9 +1,14 @@
 package dev.claudepocket
 
 import android.content.Context
+import kotlinx.serialization.Serializable
 
-// Настройки подключения. Приватное app-хранилище; ключ и пароль дальше устройства не уходят.
+// Параметры одного подключения. Хранятся только на устройстве (см. ConnectionStore);
+// пароль и ключи дальше устройства не уходят.
+@Serializable
 data class ConnectionPrefs(
+    val id: String = "",               // пустой = ещё не сохранено в список
+    val name: String = "",             // удобное имя; пустое = показываем user@host
     val host: String = "",
     val port: Int = 22,
     val user: String = "",
@@ -16,20 +21,24 @@ data class ConnectionPrefs(
     // и прописанный в authorized_keys сервера. Дальше вход идёт по нему.
     val deviceKey: String = "",
 ) {
-    val isFilled: Boolean
-        get() = host.isNotBlank() && user.isNotBlank() &&
-            (if (authType == "password") password.isNotBlank() else privateKey.isNotBlank())
+    val displayName: String
+        get() = name.ifBlank { "$user@$host" + if (port != 22) ":$port" else "" }
 }
 
-object Prefs {
+// Старое хранилище одного подключения (SharedPreferences, открытым текстом).
+// Оставлено только ради миграции в ConnectionStore; после неё файл удаляется.
+object LegacyPrefs {
     private const val NAME = "conn"
 
-    fun load(ctx: Context): ConnectionPrefs {
+    fun loadAndClear(ctx: Context): ConnectionPrefs? {
         val p = ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-        return ConnectionPrefs(
-            host = p.getString("host", "") ?: "",
+        val host = p.getString("host", "") ?: ""
+        val user = p.getString("user", "") ?: ""
+        if (host.isBlank() || user.isBlank()) return null
+        val c = ConnectionPrefs(
+            host = host,
             port = p.getInt("port", 22),
-            user = p.getString("user", "") ?: "",
+            user = user,
             authType = p.getString("authType", "password") ?: "password",
             password = p.getString("password", "") ?: "",
             privateKey = p.getString("privateKey", "") ?: "",
@@ -37,19 +46,7 @@ object Prefs {
             daemonPort = p.getInt("daemonPort", 8787),
             deviceKey = p.getString("deviceKey", "") ?: "",
         )
-    }
-
-    fun save(ctx: Context, c: ConnectionPrefs) {
-        ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
-            .putString("host", c.host)
-            .putInt("port", c.port)
-            .putString("user", c.user)
-            .putString("authType", c.authType)
-            .putString("password", c.password)
-            .putString("privateKey", c.privateKey)
-            .putString("keyPassphrase", c.keyPassphrase)
-            .putInt("daemonPort", c.daemonPort)
-            .putString("deviceKey", c.deviceKey)
-            .apply()
+        p.edit().clear().apply()
+        return c
     }
 }
