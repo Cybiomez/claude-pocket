@@ -23,13 +23,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.DragIndicator
-import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Science
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -95,6 +97,7 @@ private fun ConnectionList(vm: AppViewModel) {
                 )
             }
             val uriHandler = LocalUriHandler.current
+            // Тема оформления: система / светлая / тёмная
             IconButton(onClick = { vm.cycleTheme() }) {
                 Icon(
                     when (vm.themeMode) {
@@ -104,6 +107,17 @@ private fun ConnectionList(vm: AppViewModel) {
                     },
                     "Тема оформления", Modifier.size(20.dp),
                     tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f),
+                )
+            }
+            // Переключатель канала обновлений: latest / dev
+            val devOn = vm.updateChannel == dev.claudepocket.net.UpdateChecker.CHANNEL_DEV
+            IconButton(onClick = { vm.toggleChannel() }) {
+                Icon(
+                    Icons.Filled.Science,
+                    if (devOn) "Канал dev включён" else "Включить канал dev",
+                    Modifier.size(20.dp),
+                    tint = if (devOn) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f),
                 )
             }
             IconButton(onClick = { uriHandler.openUri(dev.claudepocket.net.UpdateChecker.REPO_URL) }) {
@@ -317,10 +331,19 @@ private fun ConnectionForm(vm: AppViewModel) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Spacer(Modifier.height(24.dp))
-        Text(
-            if (isEdit) "Подключение" else "Новое подключение",
-            style = MaterialTheme.typography.headlineMedium,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // Стрелка «назад к списку» — видима, только если есть куда вернуться
+            if (canGoBack) {
+                IconButton(onClick = close, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "К списку подключений")
+                }
+                Spacer(Modifier.width(8.dp))
+            }
+            Text(
+                if (isEdit) "Подключение" else "Новое подключение",
+                style = MaterialTheme.typography.headlineMedium,
+            )
+        }
         Text(
             "Подключение к своему серверу с Claude Code по SSH",
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f), fontSize = 14.sp,
