@@ -59,6 +59,17 @@ data class SlashCommand(val name: String, val description: String, val argumentH
 
 data class SessionSettings(val permissionMode: String, val model: String?, val effort: String?)
 
+// Ответ /api/file: либо каталог со списком, либо файл с содержимым
+data class DirChild(val name: String, val dir: Boolean)
+data class FileEntry(
+    val path: String,
+    val isDir: Boolean,
+    val entries: List<DirChild> = emptyList(),   // для каталога
+    val size: Long = 0,                          // для файла
+    val encoding: String = "utf8",               // utf8 | base64
+    val content: String = "",                    // текст или base64
+)
+
 class ApiClient(private val baseUrl: String, private val token: String) {
     val http: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -190,7 +201,21 @@ class ApiClient(private val baseUrl: String, private val token: String) {
             put("name", name); put("mime", mime); put("base64", base64)
         })["attachment"]!!.jsonObject
 
-    suspend fun file(path: String): JsonObject = get("/api/file?path=" + java.net.URLEncoder.encode(path, "UTF-8"))
+    suspend fun file(path: String): FileEntry {
+        val o = get("/api/file?path=" + java.net.URLEncoder.encode(path, "UTF-8"))
+        val isDir = o["dir"]?.jsonPrimitive?.boolean ?: false
+        return FileEntry(
+            path = o["path"]?.jsonPrimitive?.contentOrNull ?: path,
+            isDir = isDir,
+            entries = if (isDir) o["entries"]!!.jsonArray.map {
+                val e = it.jsonObject
+                DirChild(e["name"]!!.jsonPrimitive.content, e["dir"]?.jsonPrimitive?.boolean ?: false)
+            } else emptyList(),
+            size = o["size"]?.jsonPrimitive?.longOrNull ?: 0,
+            encoding = o["encoding"]?.jsonPrimitive?.contentOrNull ?: "utf8",
+            content = o["content"]?.jsonPrimitive?.contentOrNull ?: "",
+        )
+    }
 }
 
 fun parseBlocks(arr: kotlinx.serialization.json.JsonArray): List<Block> = arr.map { el ->
