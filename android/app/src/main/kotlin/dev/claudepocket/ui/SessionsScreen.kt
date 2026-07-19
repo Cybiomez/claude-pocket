@@ -145,7 +145,8 @@ fun SessionsScreen(vm: AppViewModel) {
 @Composable
 private fun SessionsFooter(vm: AppViewModel) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
+        // Справа отступ под плавающую кнопку добавления сессии — лимиты не под ней
+        Modifier.fillMaxWidth().padding(start = 14.dp, end = 76.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (vm.sessionsLoading) {
