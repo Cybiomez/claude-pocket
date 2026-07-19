@@ -319,6 +319,19 @@ private fun fmtTokens(n: Long): String = when {
     else -> n.toString()
 }
 
+// Компактная квадратная кнопка панели ввода (без навязанного тач-таргета IconButton)
+@Composable
+private fun SquareBtn(onClick: () -> Unit, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Box(
+        modifier
+            .size(28.dp)
+            .clip(RoundedCornerShape(7.dp))
+            .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f), RoundedCornerShape(7.dp))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { content() }
+}
+
 @Composable
 private fun InputBar(vm: AppViewModel, tab: String, chat: ChatState) {
     var text by rememberSaveable(tab) { mutableStateOf("") }
@@ -356,16 +369,16 @@ private fun InputBar(vm: AppViewModel, tab: String, chat: ChatState) {
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.Bottom,
         ) {
-            // Квадратные кнопки со скруглёнными краями — компактнее круглых и не наезжают.
-            // 32dp + отступ снизу 12dp = по центру однострочного поля ввода (56dp)
-            val squareBtn = Modifier.padding(bottom = 12.dp).size(32.dp)
-                .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f), RoundedCornerShape(8.dp))
-            IconButton(onClick = { picker.launch("*/*") }, modifier = squareBtn) {
+            // Компактные квадратные кнопки: 28dp с иконкой 16dp. Не через IconButton —
+            // он навязывает минимальный тач-таргет 48dp и кнопки наезжают друг на друга.
+            // Отступ снизу 14dp центрует по однострочному полю ввода (56dp).
+            val btnMod = Modifier.padding(bottom = 14.dp)
+            SquareBtn(onClick = { picker.launch("*/*") }, modifier = btnMod) {
                 Icon(Icons.Filled.AttachFile, "Прикрепить файл", Modifier.size(16.dp))
             }
-            Spacer(Modifier.width(4.dp))
+            Spacer(Modifier.width(6.dp))
             Box {
-                IconButton(onClick = { slashOpen = true }, modifier = squareBtn) {
+                SquareBtn(onClick = { slashOpen = true }, modifier = btnMod) {
                     Text(
                         "/", fontSize = 15.sp, fontFamily = FontFamily.Monospace,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
@@ -383,14 +396,14 @@ private fun InputBar(vm: AppViewModel, tab: String, chat: ChatState) {
                     )
                 }
             }
-            Spacer(Modifier.width(4.dp))
+            Spacer(Modifier.width(6.dp))
             Box {
-                IconButton(onClick = { tuneOpen = true }, modifier = squareBtn) {
+                SquareBtn(onClick = { tuneOpen = true }, modifier = btnMod) {
                     Icon(Icons.Filled.Tune, "Режим", Modifier.size(16.dp))
                 }
                 TuneMenu(vm, tab, tuneOpen) { tuneOpen = false }
             }
-            Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(8.dp))
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it },
