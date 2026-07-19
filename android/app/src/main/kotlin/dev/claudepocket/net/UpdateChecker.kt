@@ -86,13 +86,35 @@ object UpdateChecker {
 
     // Сравнение semver: 0.3.0 новее 0.2.1. Dev-сборки (0.0.0-dev) обновляются всегда.
     fun isNewer(candidate: String, current: String): Boolean {
-        if (current.endsWith("-dev")) return true
-        fun parts(v: String) = v.substringBefore('-').split('.').mapNotNull { it.toIntOrNull() } + listOf(0, 0, 0)
-        val a = parts(candidate); val b = parts(current)
+        // Локальная сборка без тега (0.0.0-dev) — обновляем на что угодно
+        if (current == "0.0.0-dev") return true
+        fun base(v: String) = v.substringBefore('-').split('.').mapNotNull { it.toIntOrNull() } + listOf(0, 0, 0)
+        val a = base(candidate); val b = base(current)
         for (i in 0..2) {
             if (a[i] != b[i]) return a[i] > b[i]
         }
-        return false
+        // Базовые номера равны — сравниваем pre-release-часть (semver):
+        // отсутствие суффикса = финальный релиз, он новее любой pre-release того же номера
+        // (0.4.5 новее 0.4.5-dev.2), а между pre-release'ами сравниваем суффиксы (dev.2 > dev.1).
+        val aPre = candidate.substringAfter('-', "")
+        val bPre = current.substringAfter('-', "")
+        if (aPre == bPre) return false
+        if (aPre.isEmpty()) return true    // кандидат финальный, текущий pre-release
+        if (bPre.isEmpty()) return false   // кандидат pre-release, текущий финальный
+        return comparePre(aPre, bPre) > 0
+    }
+
+    // Сравнение pre-release-идентификаторов через точку: числа — численно, иначе — лексически.
+    private fun comparePre(a: String, b: String): Int {
+        val aa = a.split('.'); val bb = b.split('.')
+        for (i in 0 until maxOf(aa.size, bb.size)) {
+            val x = aa.getOrNull(i) ?: return -1
+            val y = bb.getOrNull(i) ?: return 1
+            val xn = x.toIntOrNull(); val yn = y.toIntOrNull()
+            val c = if (xn != null && yn != null) xn.compareTo(yn) else x.compareTo(y)
+            if (c != 0) return c
+        }
+        return 0
     }
 
     // Качаем APK в кэш (с проверкой, что файл докачался целиком) и устанавливаем
