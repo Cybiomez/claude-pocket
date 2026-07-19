@@ -88,14 +88,20 @@ private fun ConnectionList(vm: AppViewModel) {
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Spacer(Modifier.height(16.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Claude Pocket", style = MaterialTheme.typography.headlineMedium)
-                Text(
-                    "Сохранённые подключения",
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f), fontSize = 13.sp,
-                )
-            }
+        // Заголовок и подпись — отдельной строкой над кнопками, чтобы кнопки
+        // не ужимали текст к краю экрана
+        Column(Modifier.fillMaxWidth()) {
+            Text("Claude Pocket", style = MaterialTheme.typography.headlineMedium)
+            Text(
+                "Сохранённые подключения",
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f), fontSize = 13.sp,
+            )
+        }
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             val uriHandler = LocalUriHandler.current
             // Тема оформления: система / светлая / тёмная
             IconButton(onClick = { vm.cycleTheme() }) {
