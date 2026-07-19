@@ -153,48 +153,11 @@ object UpdateChecker {
             out
         }
 
-    // Запуск установки уже скачанного APK. Сначала самообновление через
-    // PackageInstaller, при ошибке — системный установщик через ACTION_VIEW.
+    // Запуск установки уже скачанного APK через системный установщик (ACTION_VIEW +
+    // FileProvider) — тот же путь, которым APK ставится из браузера/файлов, работает
+    // на всех устройствах. Самообновление через PackageInstaller убрано: на части
+    // прошивок оно молча коммитило сессию без диалога, и установка «не отрабатывала».
     fun install(ctx: Context, file: File) {
-        try {
-            installSelf(ctx, file)
-        } catch (_: Exception) {
-            legacyInstall(ctx, file)
-        }
-    }
-
-    // Самообновление через PackageInstaller: без ACTION_VIEW и «чужого» APK —
-    // меньше поводов для Play Protect. Первое обновление система подтверждает
-    // диалогом, дальше на Android 12+ ставится без вопросов (USER_ACTION_NOT_REQUIRED).
-    private fun installSelf(ctx: Context, file: File) {
-        val installer = ctx.packageManager.packageInstaller
-        val params = android.content.pm.PackageInstaller.SessionParams(
-            android.content.pm.PackageInstaller.SessionParams.MODE_FULL_INSTALL
-        ).apply {
-            setAppPackageName(BuildConfig.APPLICATION_ID)
-            if (android.os.Build.VERSION.SDK_INT >= 31) {
-                setRequireUserAction(
-                    android.content.pm.PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED
-                )
-            }
-        }
-        val sessionId = installer.createSession(params)
-        installer.openSession(sessionId).use { s ->
-            s.openWrite("update.apk", 0, file.length()).use { out ->
-                file.inputStream().use { it.copyTo(out) }
-                s.fsync(out)
-            }
-            val statusIntent = Intent(dev.claudepocket.UpdateReceiver.ACTION)
-                .setPackage(ctx.packageName)
-            val flags = android.app.PendingIntent.FLAG_UPDATE_CURRENT or
-                (if (android.os.Build.VERSION.SDK_INT >= 31) android.app.PendingIntent.FLAG_MUTABLE else 0)
-            val pending = android.app.PendingIntent.getBroadcast(ctx, sessionId, statusIntent, flags)
-            s.commit(pending.intentSender)
-        }
-    }
-
-    // Запасной путь — системный установщик через ACTION_VIEW (как было раньше)
-    private fun legacyInstall(ctx: Context, file: File) {
         val uri = FileProvider.getUriForFile(ctx, "${BuildConfig.APPLICATION_ID}.fileprovider", file)
         ctx.startActivity(Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "application/vnd.android.package-archive")
