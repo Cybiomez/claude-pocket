@@ -30,9 +30,14 @@ jobs:
 
       - name: Restore keystore from secret
         working-directory: android
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
           mkdir -p keystore
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > keystore/claude-pocket.keystore
+          if [ -z "$KEYSTORE_BASE64" ]; then echo "::error::Секрет KEYSTORE_BASE64 пуст или не задан"; exit 1; fi
+          # чистим пробелы/переносы, попавшие при копировании строки
+          printf '%s' "$KEYSTORE_BASE64" | tr -d ' \t\r\n' | base64 -d > keystore/claude-pocket.keystore
+          ls -l keystore/claude-pocket.keystore
 
       - name: Build signed APK
         working-directory: android
