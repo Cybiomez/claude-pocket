@@ -11,9 +11,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
@@ -36,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -58,19 +61,24 @@ fun SessionsScreen(vm: AppViewModel) {
     ) { pad ->
         Column(Modifier.fillMaxSize().padding(pad)) {
             Box(Modifier.padding(horizontal = 16.dp)) { UpdateBanner(vm) }
+            // Заголовок отдельной строкой — не «едет» от числа кнопок ниже
+            Text(
+                "Сессии", style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp),
+            )
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // Выход к экрану выбора сервера (разрыв соединения)
+                // Выход к экрану выбора сервера (разрыв соединения). Иконка отзеркалена —
+                // стрелка «двери» смотрит влево, к экрану выбора.
                 IconButton(onClick = { vm.disconnect() }) {
-                    Icon(Icons.AutoMirrored.Filled.Logout, "К выбору сервера", Modifier.size(20.dp))
+                    Icon(
+                        Icons.AutoMirrored.Filled.Logout, "К выбору сервера",
+                        Modifier.size(20.dp).graphicsLayer(scaleX = -1f),
+                    )
                 }
-                Column(Modifier.weight(1f).padding(start = 4.dp)) {
-                    Text("Сессии", style = MaterialTheme.typography.headlineSmall)
-                    UsageLine(vm)
-                }
-                if (vm.sessionsLoading) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.weight(1f))
                 // Смена темы: система / светлая / тёмная
                 IconButton(onClick = { vm.cycleTheme() }) {
                     Icon(
@@ -91,7 +99,7 @@ fun SessionsScreen(vm: AppViewModel) {
                 }
             }
             LazyColumn(
-                Modifier.fillMaxSize(),
+                Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
             ) {
@@ -99,6 +107,7 @@ fun SessionsScreen(vm: AppViewModel) {
                     Card(
                         onClick = { vm.openTab(s.id) },
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        shape = RoundedCornerShape(18.dp),   // скруглены как пузыри чата
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Column(Modifier.padding(14.dp)) {
@@ -127,7 +136,30 @@ fun SessionsScreen(vm: AppViewModel) {
                     }
                 }
             }
+            SessionsFooter(vm)
         }
+    }
+}
+
+// Нижний футер, как в чате: слева индикатор загрузки, лимиты — по центру
+// (между двумя распорками) свободного места; без загрузки — по центру строки.
+@Composable
+private fun SessionsFooter(vm: AppViewModel) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (vm.sessionsLoading) {
+            CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "Обновляю…", fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
+            )
+        }
+        Spacer(Modifier.weight(1f))
+        UsageLine(vm)
+        Spacer(Modifier.weight(1f))
     }
 }
 

@@ -31,9 +31,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Slider
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.CircleShape
@@ -57,9 +60,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.claudepocket.AppViewModel
@@ -281,6 +287,8 @@ private fun StatusFooter(vm: AppViewModel, chat: ChatState) {
         Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Слева — лимит контекста; лимиты usage по центру места справа от него
+        // (между распорками), поэтому на счётчик контекста не наезжают.
         if (ctx != null) {
             LinearProgressIndicator(
                 progress = { (ctx.percentage / 100f).coerceIn(0f, 1f) },
@@ -299,6 +307,7 @@ private fun StatusFooter(vm: AppViewModel, chat: ChatState) {
                 fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
             )
         }
+        Spacer(Modifier.weight(1f))
     }
 }
 
@@ -313,6 +322,23 @@ private fun fmtTokens(n: Long): String = when {
         if (k >= 100) "${k.toInt()}k" else String.format(java.util.Locale.US, "%.1fk", k)
     }
     else -> n.toString()
+}
+
+// Компактная квадратная кнопка панели ввода (без навязанного тач-таргета IconButton).
+// Размер задаётся снаружи — панель масштабирует кнопки под ширину экрана.
+@Composable
+private fun SquareBtn(
+    onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 28.dp,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier
+            .size(size)
+            .clip(RoundedCornerShape(7.dp))
+            .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f), RoundedCornerShape(7.dp))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { content() }
 }
 
 @Composable
@@ -352,18 +378,23 @@ private fun InputBar(vm: AppViewModel, tab: String, chat: ChatState) {
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.Bottom,
         ) {
-            // Лёгкая окантовка, чтобы читались как кнопки, но не бросались в глаза.
-            // 36dp + отступ снизу 10dp = по центру однострочного поля ввода (56dp)
-            val buttonOutline = Modifier.padding(bottom = 10.dp).size(36.dp)
-                .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f), CircleShape)
-            IconButton(onClick = { picker.launch("*/*") }, modifier = buttonOutline) {
-                Icon(Icons.Filled.AttachFile, "Прикрепить файл", Modifier.size(17.dp))
+            // Компактные квадратные кнопки. Не через IconButton — он навязывает
+            // минимальный тач-таргет 48dp и кнопки наезжают друг на друга.
+            // Базовые 28dp/16dp масштабируются под ширину экрана (360dp — эталон),
+            // с ограничением снизу и сверху, чтобы на планшетах не разъезжались.
+            val scale = (LocalConfiguration.current.screenWidthDp / 360f).coerceIn(0.9f, 1.4f)
+            val btnSize = (28f * scale).dp
+            val iconSize = (16f * scale).dp
+            // Отступ снизу центрует кнопку по однострочному полю ввода (56dp): 28 − половина кнопки
+            val btnMod = Modifier.padding(bottom = (28f - 14f * scale).dp)
+            SquareBtn(onClick = { picker.launch("*/*") }, modifier = btnMod, size = btnSize) {
+                Icon(Icons.Filled.AttachFile, "Прикрепить файл", Modifier.size(iconSize))
             }
             Spacer(Modifier.width(6.dp))
             Box {
-                IconButton(onClick = { slashOpen = true }, modifier = buttonOutline) {
+                SquareBtn(onClick = { slashOpen = true }, modifier = btnMod, size = btnSize) {
                     Text(
-                        "/", fontSize = 16.sp, fontFamily = FontFamily.Monospace,
+                        "/", fontSize = (15f * scale).sp, fontFamily = FontFamily.Monospace,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
                     )
                 }
@@ -381,8 +412,8 @@ private fun InputBar(vm: AppViewModel, tab: String, chat: ChatState) {
             }
             Spacer(Modifier.width(6.dp))
             Box {
-                IconButton(onClick = { tuneOpen = true }, modifier = buttonOutline) {
-                    Icon(Icons.Filled.Tune, "Режим", Modifier.size(17.dp))
+                SquareBtn(onClick = { tuneOpen = true }, modifier = btnMod, size = btnSize) {
+                    Icon(Icons.Filled.Tune, "Режим", Modifier.size(iconSize))
                 }
                 TuneMenu(vm, tab, tuneOpen) { tuneOpen = false }
             }
@@ -426,27 +457,54 @@ private fun InputBar(vm: AppViewModel, tab: String, chat: ChatState) {
 
 @Composable
 private fun TuneMenu(vm: AppViewModel, tab: String, open: Boolean, dismiss: () -> Unit) {
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val chat = vm.chats[tab] ?: return
+    val efforts = listOf("low", "medium", "high", "xhigh", "max")
+    val effortLabels = mapOf(
+        "low" to "Низкий", "medium" to "Средний", "high" to "Высокий",
+        "xhigh" to "Очень высокий", "max" to "Максимум",
+    )
+    val modes = listOf(
+        "bypassPermissions" to "Всё разрешено",
+        "acceptEdits" to "Авто-правки",
+        "plan" to "План (без выполнения)",
+    )
+
     DropdownMenu(expanded = open, onDismissRequest = dismiss) {
-        Text("Effort (следующий ход)", fontSize = 11.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
-        for (e in listOf("low", "medium", "high", "xhigh", "max")) {
-            DropdownMenuItem(text = { Text(e) }, onClick = {
-                scope.launch { runCatching { vm.api?.saveSettings(tab, null, null, e) } }
-                dismiss()
-            })
+        // Effort ползунком с пунктами; подпись уровня меняется над ним
+        val idx = efforts.indexOf(chat.effort).coerceAtLeast(0)
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).width(240.dp)) {
+            Row {
+                Text("Уровень усилий: ", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                Text(effortLabels[chat.effort] ?: chat.effort, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary)
+            }
+            Slider(
+                value = idx.toFloat(),
+                onValueChange = { vm.setEffort(tab, efforts[it.toInt()]) },
+                valueRange = 0f..(efforts.size - 1).toFloat(),
+                steps = efforts.size - 2,   // промежуточные засечки между краями
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Низкий", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f))
+                Text("Максимум", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f))
+            }
         }
-        Text("Режим прав", fontSize = 11.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+        HorizontalDivider()
+        Text("Режим прав", fontSize = 11.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
-        for ((mode, label) in listOf(
-            "bypassPermissions" to "Всё разрешено",
-            "acceptEdits" to "Авто-правки",
-            "plan" to "План (без выполнения)",
-        )) {
-            DropdownMenuItem(text = { Text(label) }, onClick = {
-                scope.launch { runCatching { vm.api?.saveSettings(tab, mode, null, null) } }
-                dismiss()
-            })
+        for ((mode, label) in modes) {
+            val selected = chat.permissionMode == mode
+            DropdownMenuItem(
+                text = {
+                    Text(label, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                },
+                leadingIcon = {
+                    if (selected) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary)
+                    else Spacer(Modifier.size(24.dp))
+                },
+                onClick = { vm.setPermissionMode(tab, mode); dismiss() },
+            )
         }
     }
 }

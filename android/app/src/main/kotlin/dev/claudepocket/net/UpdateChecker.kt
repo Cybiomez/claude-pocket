@@ -86,13 +86,35 @@ object UpdateChecker {
 
     // Сравнение semver: 0.3.0 новее 0.2.1. Dev-сборки (0.0.0-dev) обновляются всегда.
     fun isNewer(candidate: String, current: String): Boolean {
-        if (current.endsWith("-dev")) return true
-        fun parts(v: String) = v.substringBefore('-').split('.').mapNotNull { it.toIntOrNull() } + listOf(0, 0, 0)
-        val a = parts(candidate); val b = parts(current)
+        // Локальная сборка без тега (0.0.0-dev) — обновляем на что угодно
+        if (current == "0.0.0-dev") return true
+        fun base(v: String) = v.substringBefore('-').split('.').mapNotNull { it.toIntOrNull() } + listOf(0, 0, 0)
+        val a = base(candidate); val b = base(current)
         for (i in 0..2) {
             if (a[i] != b[i]) return a[i] > b[i]
         }
-        return false
+        // Базовые номера равны — сравниваем pre-release-часть (semver):
+        // отсутствие суффикса = финальный релиз, он новее любой pre-release того же номера
+        // (0.4.5 новее 0.4.5-dev.2), а между pre-release'ами сравниваем суффиксы (dev.2 > dev.1).
+        val aPre = candidate.substringAfter('-', "")
+        val bPre = current.substringAfter('-', "")
+        if (aPre == bPre) return false
+        if (aPre.isEmpty()) return true    // кандидат финальный, текущий pre-release
+        if (bPre.isEmpty()) return false   // кандидат pre-release, текущий финальный
+        return comparePre(aPre, bPre) > 0
+    }
+
+    // Сравнение pre-release-идентификаторов через точку: числа — численно, иначе — лексически.
+    private fun comparePre(a: String, b: String): Int {
+        val aa = a.split('.'); val bb = b.split('.')
+        for (i in 0 until maxOf(aa.size, bb.size)) {
+            val x = aa.getOrNull(i) ?: return -1
+            val y = bb.getOrNull(i) ?: return 1
+            val xn = x.toIntOrNull(); val yn = y.toIntOrNull()
+            val c = if (xn != null && yn != null) xn.compareTo(yn) else x.compareTo(y)
+            if (c != 0) return c
+        }
+        return 0
     }
 
     // Качаем APK в кэш (с проверкой, что файл докачался целиком) и устанавливаем
@@ -131,48 +153,11 @@ object UpdateChecker {
             out
         }
 
-    // Запуск установки уже скачанного APK. Сначала самообновление через
-    // PackageInstaller, при ошибке — системный установщик через ACTION_VIEW.
+    // Запуск установки уже скачанного APK через системный установщик (ACTION_VIEW +
+    // FileProvider) — тот же путь, которым APK ставится из браузера/файлов, работает
+    // на всех устройствах. Самообновление через PackageInstaller убрано: на части
+    // прошивок оно молча коммитило сессию без диалога, и установка «не отрабатывала».
     fun install(ctx: Context, file: File) {
-        try {
-            installSelf(ctx, file)
-        } catch (_: Exception) {
-            legacyInstall(ctx, file)
-        }
-    }
-
-    // Самообновление через PackageInstaller: без ACTION_VIEW и «чужого» APK —
-    // меньше поводов для Play Protect. Первое обновление система подтверждает
-    // диалогом, дальше на Android 12+ ставится без вопросов (USER_ACTION_NOT_REQUIRED).
-    private fun installSelf(ctx: Context, file: File) {
-        val installer = ctx.packageManager.packageInstaller
-        val params = android.content.pm.PackageInstaller.SessionParams(
-            android.content.pm.PackageInstaller.SessionParams.MODE_FULL_INSTALL
-        ).apply {
-            setAppPackageName(BuildConfig.APPLICATION_ID)
-            if (android.os.Build.VERSION.SDK_INT >= 31) {
-                setRequireUserAction(
-                    android.content.pm.PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED
-                )
-            }
-        }
-        val sessionId = installer.createSession(params)
-        installer.openSession(sessionId).use { s ->
-            s.openWrite("update.apk", 0, file.length()).use { out ->
-                file.inputStream().use { it.copyTo(out) }
-                s.fsync(out)
-            }
-            val statusIntent = Intent(dev.claudepocket.UpdateReceiver.ACTION)
-                .setPackage(ctx.packageName)
-            val flags = android.app.PendingIntent.FLAG_UPDATE_CURRENT or
-                (if (android.os.Build.VERSION.SDK_INT >= 31) android.app.PendingIntent.FLAG_MUTABLE else 0)
-            val pending = android.app.PendingIntent.getBroadcast(ctx, sessionId, statusIntent, flags)
-            s.commit(pending.intentSender)
-        }
-    }
-
-    // Запасной путь — системный установщик через ACTION_VIEW (как было раньше)
-    private fun legacyInstall(ctx: Context, file: File) {
         val uri = FileProvider.getUriForFile(ctx, "${BuildConfig.APPLICATION_ID}.fileprovider", file)
         ctx.startActivity(Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "application/vnd.android.package-archive")
