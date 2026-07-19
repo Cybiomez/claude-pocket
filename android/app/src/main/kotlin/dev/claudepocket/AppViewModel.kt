@@ -55,6 +55,9 @@ class ChatState {
     var loading by mutableStateOf(true)
     var error by mutableStateOf<String?>(null)
     var title by mutableStateOf("")
+    // Текущие настройки хода: режим прав и уровень усилий (для подсветки в меню)
+    var permissionMode by mutableStateOf("bypassPermissions")
+    var effort by mutableStateOf("medium")
 }
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
@@ -543,11 +546,30 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 chat.items = list
                 chat.title = sessions.firstOrNull { it.id == sessionId }?.title ?: ""
                 chat.context = runCatching { a.context(sessionId) }.getOrNull()
+                runCatching { a.settings(sessionId) }.getOrNull()?.let { s ->
+                    chat.permissionMode = s.permissionMode
+                    s.effort?.let { chat.effort = it }
+                }
             } catch (e: Exception) {
                 chat.error = e.message
             }
             chat.loading = false
         }
+    }
+
+    // Смена уровня усилий/режима прав для вкладки: сохраняем на сервере и в состоянии
+    fun setEffort(tab: String, effort: String) {
+        val chat = chats[tab] ?: return
+        chat.effort = effort
+        val a = api ?: return
+        viewModelScope.launch { runCatching { a.saveSettings(tab, null, null, effort) } }
+    }
+
+    fun setPermissionMode(tab: String, mode: String) {
+        val chat = chats[tab] ?: return
+        chat.permissionMode = mode
+        val a = api ?: return
+        viewModelScope.launch { runCatching { a.saveSettings(tab, mode, null, null) } }
     }
 
     fun sendMessage(tabKey: String, text: String) {
