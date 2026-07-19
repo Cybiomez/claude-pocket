@@ -25,10 +25,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Science
+import androidx.compose.material.icons.filled.BrightnessAuto
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Science
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -94,6 +97,18 @@ private fun ConnectionList(vm: AppViewModel) {
                 )
             }
             val uriHandler = LocalUriHandler.current
+            // Тема оформления: система / светлая / тёмная
+            IconButton(onClick = { vm.cycleTheme() }) {
+                Icon(
+                    when (vm.themeMode) {
+                        dev.claudepocket.ui.ThemeMode.LIGHT -> Icons.Filled.LightMode
+                        dev.claudepocket.ui.ThemeMode.DARK -> Icons.Filled.DarkMode
+                        else -> Icons.Filled.BrightnessAuto
+                    },
+                    "Тема оформления", Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f),
+                )
+            }
             // Переключатель канала обновлений: latest / dev
             val devOn = vm.updateChannel == dev.claudepocket.net.UpdateChecker.CHANNEL_DEV
             IconButton(onClick = { vm.toggleChannel() }) {

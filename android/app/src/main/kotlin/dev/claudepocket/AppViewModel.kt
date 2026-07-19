@@ -115,6 +115,31 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private var sseJob: Job? = null
     private var lastSeq = 0L
 
+    // Тема оформления: система / тёмная / светлая (сохраняется на устройстве)
+    var themeMode by mutableStateOf(
+        runCatching {
+            dev.claudepocket.ui.ThemeMode.valueOf(
+                app.getSharedPreferences("ui", Application.MODE_PRIVATE).getString("themeMode", "SYSTEM") ?: "SYSTEM"
+            )
+        }.getOrDefault(dev.claudepocket.ui.ThemeMode.SYSTEM)
+    )
+        private set
+
+    fun cycleTheme() {
+        themeMode = when (themeMode) {
+            dev.claudepocket.ui.ThemeMode.SYSTEM -> dev.claudepocket.ui.ThemeMode.LIGHT
+            dev.claudepocket.ui.ThemeMode.LIGHT -> dev.claudepocket.ui.ThemeMode.DARK
+            dev.claudepocket.ui.ThemeMode.DARK -> dev.claudepocket.ui.ThemeMode.SYSTEM
+        }
+        getApplication<Application>().getSharedPreferences("ui", Application.MODE_PRIVATE)
+            .edit().putString("themeMode", themeMode.name).apply()
+        toast(when (themeMode) {
+            dev.claudepocket.ui.ThemeMode.SYSTEM -> "Тема: как в системе"
+            dev.claudepocket.ui.ThemeMode.LIGHT -> "Тема: светлая"
+            dev.claudepocket.ui.ThemeMode.DARK -> "Тема: тёмная"
+        })
+    }
+
     init {
         viewModelScope.launch {
             val list = withContext(Dispatchers.IO) { ConnectionStore.load(app) }
