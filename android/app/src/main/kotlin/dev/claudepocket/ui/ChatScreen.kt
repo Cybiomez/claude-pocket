@@ -27,8 +27,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material3.AssistChip
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.CircleShape
@@ -315,9 +320,34 @@ private fun InputBar(vm: AppViewModel, tab: String, chat: ChatState) {
     var text by rememberSaveable(tab) { mutableStateOf("") }
     var slashOpen by remember { mutableStateOf(false) }
     var tuneOpen by remember { mutableStateOf(false) }
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
+
+    val picker = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri -> uri?.let { vm.addAttachment(tab, it) } }
+    val attachments = vm.pendingAttachments[tab] ?: emptyList()
 
     Column {
+        if (attachments.isNotEmpty()) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                attachments.forEachIndexed { i, att ->
+                    AssistChip(
+                        onClick = { vm.removeAttachment(tab, i) },
+                        label = { Text(att.name.take(24), fontSize = 12.sp, maxLines = 1) },
+                        leadingIcon = {
+                            Icon(
+                                if (att.isImage) Icons.Filled.Image else Icons.AutoMirrored.Filled.InsertDriveFile,
+                                null, Modifier.size(16.dp),
+                            )
+                        },
+                        trailingIcon = { Icon(Icons.Filled.Close, "Убрать", Modifier.size(16.dp)) },
+                    )
+                }
+            }
+        }
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.Bottom,
@@ -326,6 +356,10 @@ private fun InputBar(vm: AppViewModel, tab: String, chat: ChatState) {
             // 36dp + отступ снизу 10dp = по центру однострочного поля ввода (56dp)
             val buttonOutline = Modifier.padding(bottom = 10.dp).size(36.dp)
                 .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f), CircleShape)
+            IconButton(onClick = { picker.launch("*/*") }, modifier = buttonOutline) {
+                Icon(Icons.Filled.AttachFile, "Прикрепить файл", Modifier.size(17.dp))
+            }
+            Spacer(Modifier.width(6.dp))
             Box {
                 IconButton(onClick = { slashOpen = true }, modifier = buttonOutline) {
                     Text(
@@ -368,12 +402,15 @@ private fun InputBar(vm: AppViewModel, tab: String, chat: ChatState) {
                     modifier = Modifier.padding(bottom = 4.dp).size(48.dp).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.error.copy(alpha = 0.15f)),
                 ) { Icon(Icons.Filled.Stop, "Прервать", tint = MaterialTheme.colorScheme.error) }
             } else {
+                val canSend = text.isNotBlank() || attachments.isNotEmpty()
                 IconButton(
                     onClick = {
                         val t = text.trim()
-                        if (t.isNotEmpty()) { vm.sendMessage(tab, t); text = "" }
+                        if (canSend) { vm.sendMessage(tab, t); text = "" }
                     },
-                    modifier = Modifier.padding(bottom = 4.dp).size(48.dp).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.primary),
+                    enabled = canSend,
+                    modifier = Modifier.padding(bottom = 4.dp).size(48.dp).clip(RoundedCornerShape(24.dp))
+                        .background(if (canSend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)),
                 ) { Icon(Icons.AutoMirrored.Filled.Send, "Отправить", tint = MaterialTheme.colorScheme.onPrimary) }
             }
         }
