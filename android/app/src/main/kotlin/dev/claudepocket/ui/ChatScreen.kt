@@ -287,6 +287,8 @@ private fun StatusFooter(vm: AppViewModel, chat: ChatState) {
         Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Слева — лимит контекста; лимиты usage по центру места справа от него
+        // (между распорками), поэтому на счётчик контекста не наезжают.
         if (ctx != null) {
             LinearProgressIndicator(
                 progress = { (ctx.percentage / 100f).coerceIn(0f, 1f) },
@@ -305,6 +307,7 @@ private fun StatusFooter(vm: AppViewModel, chat: ChatState) {
                 fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
             )
         }
+        Spacer(Modifier.weight(1f))
     }
 }
 
