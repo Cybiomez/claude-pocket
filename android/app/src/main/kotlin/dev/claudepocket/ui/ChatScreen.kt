@@ -221,9 +221,10 @@ private fun UserBubble(text: String) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
         Box(
             Modifier.widthIn(max = 320.dp)
-                .clip(RoundedCornerShape(16.dp, 4.dp, 16.dp, 16.dp))
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f))
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                // Скруглено со всех сторон, маленький «хвостик» у нижнего угла со стороны отправителя
+                .clip(RoundedCornerShape(18.dp, 18.dp, 6.dp, 18.dp))
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f))
+                .padding(horizontal = 14.dp, vertical = 9.dp),
         ) { Text(text, fontSize = 14.sp) }
     }
 }
@@ -232,9 +233,10 @@ private fun UserBubble(text: String) {
 private fun AssistantBubble(content: @Composable () -> Unit) {
     Box(
         Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(4.dp, 16.dp, 16.dp, 16.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .clip(RoundedCornerShape(18.dp, 18.dp, 18.dp, 6.dp))
+            // Чуть темнее фона — ответы ассистента различимее (цвет в теме)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = 14.dp, vertical = 9.dp),
     ) { content() }
 }
 
