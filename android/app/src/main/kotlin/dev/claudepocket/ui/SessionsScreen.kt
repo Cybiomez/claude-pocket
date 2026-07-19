@@ -16,8 +16,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.BrightnessAuto
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -55,20 +59,35 @@ fun SessionsScreen(vm: AppViewModel) {
         Column(Modifier.fillMaxSize().padding(pad)) {
             Box(Modifier.padding(horizontal = 16.dp)) { UpdateBanner(vm) }
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(Modifier.weight(1f)) {
+                // Выход к экрану выбора сервера (разрыв соединения)
+                IconButton(onClick = { vm.disconnect() }) {
+                    Icon(Icons.AutoMirrored.Filled.Logout, "К выбору сервера", Modifier.size(20.dp))
+                }
+                Column(Modifier.weight(1f).padding(start = 4.dp)) {
                     Text("Сессии", style = MaterialTheme.typography.headlineSmall)
                     UsageLine(vm)
                 }
                 if (vm.sessionsLoading) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                // Смена темы: система / светлая / тёмная
+                IconButton(onClick = { vm.cycleTheme() }) {
+                    Icon(
+                        when (vm.themeMode) {
+                            dev.claudepocket.ui.ThemeMode.LIGHT -> Icons.Filled.LightMode
+                            dev.claudepocket.ui.ThemeMode.DARK -> Icons.Filled.DarkMode
+                            else -> Icons.Filled.BrightnessAuto
+                        },
+                        "Тема оформления", Modifier.size(20.dp),
+                    )
+                }
                 IconButton(onClick = { vm.openFileBrowser() }) {
-                    Icon(Icons.Filled.FolderOpen, "Файлы сервера")
+                    Icon(Icons.Filled.FolderOpen, "Файлы сервера", Modifier.size(20.dp))
                 }
                 UpdateCheckButton(vm)
                 IconButton(onClick = { vm.refreshSessions(); vm.refreshUsage() }) {
-                    Icon(Icons.Filled.Refresh, "Обновить")
+                    Icon(Icons.Filled.Refresh, "Обновить", Modifier.size(20.dp))
                 }
             }
             LazyColumn(
