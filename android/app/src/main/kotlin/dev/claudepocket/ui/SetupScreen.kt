@@ -24,7 +24,10 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.BrightnessAuto
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.DragIndicator
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material3.AlertDialog
@@ -92,6 +95,17 @@ private fun ConnectionList(vm: AppViewModel) {
                 )
             }
             val uriHandler = LocalUriHandler.current
+            IconButton(onClick = { vm.cycleTheme() }) {
+                Icon(
+                    when (vm.themeMode) {
+                        dev.claudepocket.ui.ThemeMode.LIGHT -> Icons.Filled.LightMode
+                        dev.claudepocket.ui.ThemeMode.DARK -> Icons.Filled.DarkMode
+                        else -> Icons.Filled.BrightnessAuto
+                    },
+                    "Тема оформления", Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f),
+                )
+            }
             IconButton(onClick = { uriHandler.openUri(dev.claudepocket.net.UpdateChecker.REPO_URL) }) {
                 Icon(
                     GitHubIcon, "Репозиторий на GitHub", Modifier.size(20.dp),
