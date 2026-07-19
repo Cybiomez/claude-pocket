@@ -141,12 +141,12 @@ fun SessionsScreen(vm: AppViewModel) {
     }
 }
 
-// Нижний футер, как в чате: слева индикатор загрузки, справа — лимиты
+// Нижний футер, как в чате: слева индикатор загрузки, лимиты — по центру
+// (между двумя распорками) свободного места; без загрузки — по центру строки.
 @Composable
 private fun SessionsFooter(vm: AppViewModel) {
     Row(
-        // Справа отступ под плавающую кнопку добавления сессии — лимиты не под ней
-        Modifier.fillMaxWidth().padding(start = 14.dp, end = 76.dp, top = 4.dp, bottom = 4.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (vm.sessionsLoading) {
@@ -159,6 +159,7 @@ private fun SessionsFooter(vm: AppViewModel) {
         }
         Spacer(Modifier.weight(1f))
         UsageLine(vm)
+        Spacer(Modifier.weight(1f))
     }
 }
 
