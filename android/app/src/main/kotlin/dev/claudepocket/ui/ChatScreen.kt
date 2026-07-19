@@ -320,13 +320,14 @@ private fun InputBar(vm: AppViewModel, tab: String, chat: ChatState) {
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.Bottom,
         ) {
-            // Лёгкая окантовка, чтобы читались как кнопки, но не бросались в глаза
-            val buttonOutline = Modifier.padding(bottom = 4.dp).size(42.dp)
+            // Лёгкая окантовка, чтобы читались как кнопки, но не бросались в глаза.
+            // 36dp + отступ снизу 10dp = по центру однострочного поля ввода (56dp)
+            val buttonOutline = Modifier.padding(bottom = 10.dp).size(36.dp)
                 .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f), CircleShape)
             Box {
                 IconButton(onClick = { slashOpen = true }, modifier = buttonOutline) {
                     Text(
-                        "/", fontSize = 19.sp, fontFamily = FontFamily.Monospace,
+                        "/", fontSize = 16.sp, fontFamily = FontFamily.Monospace,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
                     )
                 }
@@ -342,14 +343,14 @@ private fun InputBar(vm: AppViewModel, tab: String, chat: ChatState) {
                     )
                 }
             }
-            Spacer(Modifier.width(4.dp))
+            Spacer(Modifier.width(6.dp))
             Box {
                 IconButton(onClick = { tuneOpen = true }, modifier = buttonOutline) {
-                    Icon(Icons.Filled.Tune, "Режим", Modifier.size(19.dp))
+                    Icon(Icons.Filled.Tune, "Режим", Modifier.size(17.dp))
                 }
                 TuneMenu(vm, tab, tuneOpen) { tuneOpen = false }
             }
-            Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(8.dp))
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it },
@@ -362,7 +363,7 @@ private fun InputBar(vm: AppViewModel, tab: String, chat: ChatState) {
             if (chat.running) {
                 IconButton(
                     onClick = { vm.interrupt(tab) },
-                    modifier = Modifier.size(48.dp).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.error.copy(alpha = 0.15f)),
+                    modifier = Modifier.padding(bottom = 4.dp).size(48.dp).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.error.copy(alpha = 0.15f)),
                 ) { Icon(Icons.Filled.Stop, "Прервать", tint = MaterialTheme.colorScheme.error) }
             } else {
                 IconButton(
@@ -370,7 +371,7 @@ private fun InputBar(vm: AppViewModel, tab: String, chat: ChatState) {
                         val t = text.trim()
                         if (t.isNotEmpty()) { vm.sendMessage(tab, t); text = "" }
                     },
-                    modifier = Modifier.size(48.dp).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.padding(bottom = 4.dp).size(48.dp).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.primary),
                 ) { Icon(Icons.AutoMirrored.Filled.Send, "Отправить", tint = MaterialTheme.colorScheme.onPrimary) }
             }
         }
