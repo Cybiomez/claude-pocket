@@ -1,0 +1,52 @@
+# Релиз по тегу: пуш тега v* -> сборка подписанного APK -> GitHub Release с вложением.
+# Секреты репозитория (Settings -> Secrets and variables -> Actions):
+#   KEYSTORE_BASE64   - base64 файла keystore
+#   KEYSTORE_PASSWORD - пароль хранилища
+#   KEY_ALIAS         - алиас ключа
+#   KEY_PASSWORD      - пароль ключа
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # нужны теги для вычисления версии
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Restore keystore from secret
+        working-directory: android
+        run: |
+          mkdir -p keystore
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > keystore/claude-pocket.keystore
+
+      - name: Build signed APK
+        working-directory: android
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Rename APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk claude-pocket-${{ github.ref_name }}.apk
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: claude-pocket-${{ github.ref_name }}.apk
+          generate_release_notes: true

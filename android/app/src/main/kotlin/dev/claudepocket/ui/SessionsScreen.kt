@@ -1,0 +1,157 @@
+package dev.claudepocket.ui
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.background
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import dev.claudepocket.AppViewModel
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+@Composable
+fun SessionsScreen(vm: AppViewModel) {
+    Scaffold(
+        modifier = Modifier.systemBarsPadding(),
+        containerColor = MaterialTheme.colorScheme.background,
+        floatingActionButton = {
+            FloatingActionButton(onClick = { vm.newTab() }, containerColor = MaterialTheme.colorScheme.primary) {
+                Icon(Icons.Filled.Add, "Новая сессия", tint = MaterialTheme.colorScheme.onPrimary)
+            }
+        },
+    ) { pad ->
+        Column(Modifier.fillMaxSize().padding(pad)) {
+            UpdateBanner(vm)
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Сессии", style = MaterialTheme.typography.headlineSmall)
+                    UsageLine(vm)
+                }
+                if (vm.sessionsLoading) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                IconButton(onClick = { vm.refreshSessions(); vm.refreshUsage() }) {
+                    Icon(Icons.Filled.Refresh, "Обновить")
+                }
+            }
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+            ) {
+                items(vm.sessions, key = { it.id }) { s ->
+                    Card(
+                        onClick = { vm.openTab(s.id) },
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(Modifier.padding(14.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (s.running) Box(
+                                    Modifier.size(8.dp).background(Color(0xFF4CAF50), CircleShape)
+                                )
+                                if (s.running) Spacer(Modifier.size(6.dp))
+                                Text(
+                                    s.title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                                )
+                                Text(
+                                    formatTime(s.mtime), fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                                )
+                            }
+                            if (s.lastText.isNotBlank()) {
+                                Spacer(Modifier.size(4.dp))
+                                Text(
+                                    s.lastText, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun UpdateBanner(vm: AppViewModel) {
+    val u = vm.update ?: return
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+    ) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Доступна версия ${u.version}", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                val p = vm.updateProgress
+                Text(
+                    if (p != null) "Скачивание… $p%" else "Нажми, чтобы скачать и установить",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
+            }
+            if (vm.updateProgress == null) {
+                androidx.compose.material3.TextButton(onClick = { vm.installUpdate() }) { Text("Обновить") }
+            } else {
+                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            }
+        }
+    }
+}
+
+@Composable
+fun UsageLine(vm: AppViewModel) {
+    val u = vm.usage ?: return
+    if (!u.available) return
+    Text(
+        "5 ч: ${u.fiveHourPct ?: "—"}% · неделя: ${u.sevenDayPct ?: "—"}%",
+        fontSize = 12.sp,
+        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f),
+    )
+}
+
+private fun formatTime(ms: Long): String {
+    if (ms <= 0) return ""
+    val now = System.currentTimeMillis()
+    val diff = now - ms
+    return when {
+        diff < 60_000 -> "сейчас"
+        diff < 3_600_000 -> "${diff / 60_000} мин"
+        diff < 86_400_000 -> "${diff / 3_600_000} ч"
+        else -> SimpleDateFormat("d MMM", Locale("ru")).format(Date(ms))
+    }
+}
