@@ -10,6 +10,8 @@ import androidx.lifecycle.viewModelScope
 import dev.claudepocket.net.ApiClient
 import dev.claudepocket.net.Block
 import dev.claudepocket.net.ContextInfo
+import dev.claudepocket.net.FolderInfo
+import dev.claudepocket.net.FoldersDoc
 import dev.claudepocket.net.SessionInfo
 import dev.claudepocket.net.SlashCommand
 import dev.claudepocket.net.SseState
@@ -26,6 +28,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.booleanOrNull
+import java.util.UUID
 import dev.claudepocket.net.parseBlocks
 
 sealed interface ConnState {
@@ -76,6 +79,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var sessionsLoading by mutableStateOf(false)
     var usage by mutableStateOf<UsageInfo?>(null)
     var commands by mutableStateOf<List<SlashCommand>>(emptyList())
+
+    // Папки сессий: раскладка хранится на сервере (одинакова на всех устройствах).
+    // expandedFolders — только состояние сеанса: по умолчанию всё свёрнуто.
+    var folders by mutableStateOf<List<FolderInfo>>(emptyList())
+    var sessionFolder by mutableStateOf<Map<String, String>>(emptyMap())
+    var expandedFolders by mutableStateOf<Set<String>>(emptySet())
 
     // Вкладки: ключ = sessionId либо temp 'new-...'
     var tabs by mutableStateOf<List<String>>(emptyList())
@@ -216,6 +225,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 startSse()
                 refreshSessions()
                 refreshUsage()
+                loadFolders()
                 viewModelScope.launch {
                     runCatching { commands = a.commands() }
                 }
@@ -480,9 +490,70 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val a = api ?: return
         viewModelScope.launch {
             sessionsLoading = true
-            runCatching { sessions = a.sessions() }
+            // Порядок задаём и на клиенте: свежие изменения сверху, независимо
+            // от версии демона на сервере
+            runCatching { sessions = a.sessions().sortedByDescending { it.mtime } }
             sessionsLoading = false
         }
+    }
+
+    // --- Папки сессий ---
+
+    fun loadFolders() {
+        val a = api ?: return
+        viewModelScope.launch {
+            runCatching { a.folders() }.onSuccess {
+                folders = it.folders
+                sessionFolder = it.assignments
+            }
+        }
+    }
+
+    // Раскладка целиком уезжает на сервер; локальное состояние уже обновлено,
+    // ответ сервера принимаем как истину (он чистит битые ссылки).
+    private fun pushFolders() {
+        val a = api ?: return
+        viewModelScope.launch {
+            runCatching { a.saveFolders(FoldersDoc(folders, sessionFolder)) }.onSuccess {
+                folders = it.folders
+                sessionFolder = it.assignments
+            }.onFailure { toast("Не удалось сохранить папки: ${it.message ?: "нет связи"}") }
+        }
+    }
+
+    fun createFolder(name: String): String? {
+        val clean = name.trim().take(60)
+        if (clean.isBlank()) return null
+        val id = "f-" + UUID.randomUUID().toString().take(8)
+        folders = folders + FolderInfo(id, clean)
+        pushFolders()
+        return id
+    }
+
+    fun renameFolder(id: String, name: String) {
+        val clean = name.trim().take(60)
+        if (clean.isBlank()) return
+        folders = folders.map { if (it.id == id) it.copy(name = clean) else it }
+        pushFolders()
+    }
+
+    // Папку убираем, сессии из неё возвращаются в общий список
+    fun deleteFolder(id: String) {
+        folders = folders.filterNot { it.id == id }
+        sessionFolder = sessionFolder.filterValues { it != id }
+        expandedFolders = expandedFolders - id
+        pushFolders()
+    }
+
+    // folderId == null — вынуть сессию из папки
+    fun moveSessionToFolder(sessionId: String, folderId: String?) {
+        sessionFolder = if (folderId == null) sessionFolder - sessionId
+        else sessionFolder + (sessionId to folderId)
+        pushFolders()
+    }
+
+    fun toggleFolder(id: String) {
+        expandedFolders = if (id in expandedFolders) expandedFolders - id else expandedFolders + id
     }
 
     private var refreshScheduled = false

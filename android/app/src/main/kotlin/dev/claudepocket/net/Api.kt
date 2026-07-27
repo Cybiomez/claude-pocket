@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.doubleOrNull
@@ -59,6 +60,14 @@ data class SlashCommand(val name: String, val description: String, val argumentH
 
 data class SessionSettings(val permissionMode: String, val model: String?, val effort: String?)
 
+// Папки сессий. Раскладка хранится на сервере: folders — сами папки,
+// assignments — какая сессия в какой папке (sessionId -> folderId).
+data class FolderInfo(val id: String, val name: String)
+data class FoldersDoc(
+    val folders: List<FolderInfo> = emptyList(),
+    val assignments: Map<String, String> = emptyMap(),
+)
+
 // Ответ /api/file: либо каталог со списком, либо файл с содержимым
 data class DirChild(val name: String, val dir: Boolean)
 data class FileEntry(
@@ -100,9 +109,46 @@ class ApiClient(private val baseUrl: String, private val token: String) {
         }
     }
 
+    private suspend fun put(path: String, body: JsonObject): JsonObject = withContext(Dispatchers.IO) {
+        val rb = body.toString().toRequestBody("application/json".toMediaType())
+        http.newCall(authedRequest("$baseUrl$path").put(rb).build()).execute().use { r ->
+            val text = r.body?.string() ?: "{}"
+            check(r.isSuccessful) { "HTTP ${r.code}: ${text.take(200)}" }
+            json.parseToJsonElement(text).jsonObject
+        }
+    }
+
     fun streamUrl(afterSeq: Long) = "$baseUrl/api/stream?afterSeq=$afterSeq"
 
     suspend fun health(): Boolean = try { get("/api/health")["ok"]?.jsonPrimitive?.boolean == true } catch (_: Exception) { false }
+
+    suspend fun folders(): FoldersDoc = parseFolders(get("/api/folders"))
+
+    suspend fun saveFolders(doc: FoldersDoc): FoldersDoc = parseFolders(
+        put("/api/folders", buildJsonObject {
+            putJsonArray("folders") {
+                doc.folders.forEach { f ->
+                    add(buildJsonObject { put("id", f.id); put("name", f.name) })
+                }
+            }
+            put("assignments", buildJsonObject {
+                doc.assignments.forEach { (sessionId, folderId) -> put(sessionId, folderId) }
+            })
+        })
+    )
+
+    private fun parseFolders(o: JsonObject): FoldersDoc {
+        val folders = o["folders"]?.jsonArray.orEmpty().mapNotNull { el ->
+            val f = el.jsonObject
+            val id = f["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            val name = f["name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            FolderInfo(id, name)
+        }
+        val assignments = o["assignments"]?.jsonObject.orEmpty()
+            .mapNotNull { (k, v) -> v.jsonPrimitive.contentOrNull?.let { k to it } }
+            .toMap()
+        return FoldersDoc(folders, assignments)
+    }
 
     suspend fun sessions(): List<SessionInfo> =
         get("/api/sessions")["sessions"]!!.jsonArray.map { el ->
