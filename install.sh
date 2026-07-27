@@ -74,7 +74,10 @@ WantedBy=multi-user.target
 UNIT
 
 sudo systemctl daemon-reload
-sudo systemctl enable --now claude-pocketd
+sudo systemctl enable claude-pocketd
+# Именно restart, а не `enable --now`: если сервис уже запущен, `--now` его НЕ
+# перезапускает, и обновлённый код демона молча не подхватывается.
+sudo systemctl restart claude-pocketd
 sleep 1
 if systemctl is-active --quiet claude-pocketd; then
   say "Демон запущен: $(curl -s http://127.0.0.1:8787/api/health || echo 'порт ещё поднимается')"
