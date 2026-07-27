@@ -1,6 +1,7 @@
 package dev.claudepocket.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -29,15 +30,20 @@ fun MarkdownText(text: String, modifier: Modifier = Modifier) {
         val segments = splitCodeBlocks(text)
         for (seg in segments) {
             if (seg.isCode) {
+                // Контрастный фон + рамка — иначе блок сливается с пузырём
+                // ассистента (у него тоже surfaceVariant) и «блока не видно».
+                val codeShape = RoundedCornerShape(8.dp)
                 Text(
                     seg.text.trimEnd(),
                     fontFamily = FontFamily.Monospace,
                     fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier
                         .padding(vertical = 4.dp)
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .clip(codeShape)
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f))
+                        .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f), codeShape)
                         .horizontalScroll(rememberScrollState())
                         .padding(10.dp),
                 )

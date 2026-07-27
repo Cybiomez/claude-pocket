@@ -4,6 +4,8 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.text.selection.DisableSelection
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,6 +54,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -134,24 +137,39 @@ private fun TabsBar(vm: AppViewModel) {
 private fun MessageList(chat: ChatState) {
     val listState = rememberLazyListState()
     val total = chat.items.size + (if (chat.streaming.isNotBlank()) 1 else 0)
-    LaunchedEffect(total, chat.streaming.length / 200) {
-        if (total > 0) listState.animateScrollToItem(total - 1)
+    // Прокручиваем вниз только когда пользователь и так внизу. Если он поднялся
+    // читать сообщение выше — новые ответы инструмента экран не дёргают.
+    val atBottom by remember {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            val last = info.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf true
+            last.index >= info.totalItemsCount - 2
+        }
     }
-    LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        items(chat.items, key = { it.itemKey }) { item -> ChatItemView(item) }
-        if (chat.streaming.isNotBlank()) {
-            item(key = "streaming") { AssistantBubble { MarkdownText(chat.streaming) } }
-        } else if (chat.running) {
-            item(key = "typing") {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(8.dp)) {
-                    CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Работаю…", fontSize = 13.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
+    LaunchedEffect(total, chat.streaming.length / 200) {
+        if (total > 0 && atBottom) listState.animateScrollToItem(total - 1)
+    }
+    // Оборачиваем в SelectionContainer — иначе текст сообщений нельзя выделить и скопировать
+    SelectionContainer(Modifier.fillMaxSize()) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(chat.items, key = { it.itemKey }) { item -> ChatItemView(item) }
+            if (chat.streaming.isNotBlank()) {
+                item(key = "streaming") { AssistantBubble { MarkdownText(chat.streaming) } }
+            } else if (chat.running) {
+                item(key = "typing") {
+                    // Индикатор набора выделять незачем — исключаем из копирования
+                    DisableSelection {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(8.dp)) {
+                            CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Работаю…", fontSize = 13.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
+                        }
+                    }
                 }
             }
         }
