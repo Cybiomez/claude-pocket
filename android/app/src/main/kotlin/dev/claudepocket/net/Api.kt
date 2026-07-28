@@ -239,11 +239,13 @@ class ApiClient(private val baseUrl: String, private val token: String) {
         )
     }
 
+    // Шлём только изменяемые поля (null = не трогать). Для модели пустая строка ""
+    // означает «по умолчанию» (демон превратит её в null).
     suspend fun saveSettings(sessionId: String, permissionMode: String?, model: String?, effort: String?) {
         post("/api/sessions/$sessionId/settings", buildJsonObject {
             if (permissionMode != null) put("permissionMode", permissionMode)
-            put("model", model)
-            put("effort", effort)
+            if (model != null) put("model", model)
+            if (effort != null) put("effort", effort)
         })
     }
 

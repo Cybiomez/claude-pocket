@@ -38,7 +38,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -82,8 +81,8 @@ private sealed interface ListRow {
 
 @Composable
 fun SessionsScreen(vm: AppViewModel) {
-    // При каждом входе на экран (в том числе возврате из чата) подтягиваем список:
-    // иначе названия и порядок остаются с момента подключения
+    val nav = LocalPagerNav.current
+    // Первичная загрузка (возврат к списку обновляет AppRoot по смене страницы)
     LaunchedEffect(Unit) {
         vm.refreshSessions()
         vm.refreshUsage()
@@ -101,7 +100,7 @@ fun SessionsScreen(vm: AppViewModel) {
         modifier = Modifier.systemBarsPadding(),
         containerColor = MaterialTheme.colorScheme.background,
         floatingActionButton = {
-            FloatingActionButton(onClick = { vm.newTab() }, containerColor = MaterialTheme.colorScheme.primary) {
+            FloatingActionButton(onClick = { vm.newTab(); nav.toChat() }, containerColor = MaterialTheme.colorScheme.primary) {
                 Icon(Icons.Filled.Add, "Новая сессия", tint = MaterialTheme.colorScheme.onPrimary)
             }
         },
@@ -196,7 +195,7 @@ fun SessionsScreen(vm: AppViewModel) {
                             isOpen = r.s.id in vm.tabs,
                             folders = vm.folders,
                             currentFolderId = vm.sessionFolder[r.s.id],
-                            onOpen = { vm.openTab(r.s.id) },
+                            onOpen = { vm.openTab(r.s.id); nav.toChat() },
                             onMove = { folderId -> vm.moveSessionToFolder(r.s.id, folderId) },
                             onNewFolder = { createFolderFor = r.s.id; createFolderOpen = true },
                             onRename = { renameSessionFor = r.s },
@@ -302,7 +301,7 @@ private fun FolderRow(row: ListRow.Folder, onToggle: () -> Unit, onRename: () ->
                     tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                 )
             }
-            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            AppMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                 DropdownMenuItem(
                     text = { Text("Переименовать") },
                     onClick = { menuOpen = false; onRename() },
@@ -373,7 +372,7 @@ private fun SessionCard(
                         tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                     )
                 }
-                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                AppMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                     Text(
                         "Переместить в папку", fontSize = 11.sp,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),

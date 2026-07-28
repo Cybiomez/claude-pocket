@@ -1,6 +1,5 @@
 package dev.claudepocket.ui
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -55,7 +54,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -97,10 +95,6 @@ fun ChatScreen(vm: AppViewModel) {
     val tab = vm.activeTab ?: return
     val chat = vm.chats[tab] ?: return
     val scope = rememberCoroutineScope()
-
-    // Системная кнопка/жест «назад» — к списку сессий, а не выход из приложения.
-    // Это же ловит краевой свайп-назад при жестовой навигации.
-    BackHandler { vm.activeTab = null }
 
     Column(Modifier.fillMaxSize().systemBarsPadding().imePadding()) {
         TabsBar(vm)
@@ -212,7 +206,8 @@ private fun TabsBar(vm: AppViewModel) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        IconButton(onClick = { vm.activeTab = null }, modifier = Modifier.size(34.dp)) {
+        val nav = LocalPagerNav.current
+        IconButton(onClick = { nav.toList() }, modifier = Modifier.size(34.dp)) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, "К списку", modifier = Modifier.size(20.dp))
         }
         for (t in vm.tabs) {
@@ -514,7 +509,7 @@ private fun InputBar(vm: AppViewModel, tab: String, chat: ChatState) {
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
                     )
                 }
-                DropdownMenu(expanded = slashOpen, onDismissRequest = { slashOpen = false }) {
+                AppMenu(expanded = slashOpen, onDismissRequest = { slashOpen = false }) {
                     val cmds = vm.commands.take(30)
                     if (cmds.isEmpty()) DropdownMenuItem(text = { Text("Команды появятся после первого хода") }, onClick = { slashOpen = false })
                     for (c in cmds) DropdownMenuItem(
@@ -584,8 +579,15 @@ private fun TuneMenu(vm: AppViewModel, tab: String, open: Boolean, dismiss: () -
         "acceptEdits" to "Авто-правки",
         "plan" to "План (без выполнения)",
     )
+    // null — модель по умолчанию (как в CLI); остальные — псевдонимы, их понимает SDK
+    val models = listOf(
+        null to "По умолчанию",
+        "opus" to "Opus",
+        "sonnet" to "Sonnet",
+        "haiku" to "Haiku",
+    )
 
-    DropdownMenu(expanded = open, onDismissRequest = dismiss) {
+    AppMenu(expanded = open, onDismissRequest = dismiss) {
         // Effort ползунком с пунктами; подпись уровня меняется над ним
         val idx = efforts.indexOf(chat.effort).coerceAtLeast(0)
         Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).width(240.dp)) {
@@ -620,6 +622,23 @@ private fun TuneMenu(vm: AppViewModel, tab: String, open: Boolean, dismiss: () -
                     else Spacer(Modifier.size(24.dp))
                 },
                 onClick = { vm.setPermissionMode(tab, mode); dismiss() },
+            )
+        }
+        HorizontalDivider()
+        Text("Модель", fontSize = 11.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+        for ((id, label) in models) {
+            val selected = chat.model == id
+            DropdownMenuItem(
+                text = {
+                    Text(label, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                },
+                leadingIcon = {
+                    if (selected) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary)
+                    else Spacer(Modifier.size(24.dp))
+                },
+                onClick = { vm.setModel(tab, id); dismiss() },
             )
         }
     }

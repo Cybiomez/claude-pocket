@@ -126,6 +126,8 @@ const server = http.createServer(async (req, res) => {
       }
       if (req.method === 'POST') {
         const body = JSON.parse((await readBody(req)).toString() || '{}');
+        // Пустая модель — сброс к дефолту CLI
+        if (body.model === '') body.model = null;
         store.setSettings(key, body);
         return json(res, 200, { ok: true });
       }

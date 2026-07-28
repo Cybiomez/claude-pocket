@@ -58,9 +58,10 @@ class ChatState {
     var loading by mutableStateOf(true)
     var error by mutableStateOf<String?>(null)
     var title by mutableStateOf("")
-    // Текущие настройки хода: режим прав и уровень усилий (для подсветки в меню)
+    // Текущие настройки хода: режим прав, уровень усилий, модель (null = дефолт CLI)
     var permissionMode by mutableStateOf("bypassPermissions")
     var effort by mutableStateOf("medium")
+    var model by mutableStateOf<String?>(null)
 }
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
@@ -631,6 +632,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 runCatching { a.settings(sessionId) }.getOrNull()?.let { s ->
                     chat.permissionMode = s.permissionMode
                     s.effort?.let { chat.effort = it }
+                    chat.model = s.model
                 }
             } catch (e: Exception) {
                 chat.error = e.message
@@ -652,6 +654,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         chat.permissionMode = mode
         val a = api ?: return
         viewModelScope.launch { runCatching { a.saveSettings(tab, mode, null, null) } }
+    }
+
+    // model == null → «по умолчанию»; на сервер уходит "" (демон превращает в null)
+    fun setModel(tab: String, model: String?) {
+        val chat = chats[tab] ?: return
+        chat.model = model
+        val a = api ?: return
+        viewModelScope.launch { runCatching { a.saveSettings(tab, null, model ?: "", null) } }
     }
 
     fun sendMessage(tabKey: String, text: String) {
