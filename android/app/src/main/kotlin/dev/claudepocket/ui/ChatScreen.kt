@@ -62,6 +62,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -78,7 +79,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
@@ -159,25 +160,21 @@ fun ChatScreen(vm: AppViewModel) {
             }
         }
 
-        // ── Шапка поверх: полупрозрачная, к списку затухает; тач под ней в ленту
-        // не проходит (blockTouches гасит касания на всей площади панели) ──
+        // ── Шапка поверх: сама подложка панели чуть видна (без градиента), сами
+        // элементы непрозрачны; тач под панелью в ленту не проходит (blockTouches) ──
         Box(
             Modifier.align(Alignment.TopStart).fillMaxWidth()
                 .onSizeChanged { topBarPx = it.height }
-                .background(Brush.verticalGradient(
-                    0f to bg.copy(alpha = 0.92f), 0.7f to bg.copy(alpha = 0.92f), 1f to bg.copy(alpha = 0f),
-                ))
+                .background(bg.copy(alpha = 0.5f))
                 .blockTouches()
                 .statusBarsPadding(),
         ) { TabsBar(vm) }
 
-        // ── Низ поверх: футер + опросник + ввод; фон затухает вверх к списку ──
+        // ── Низ поверх: футер + опросник + ввод; подложка чуть видна, без градиента ──
         Column(
             Modifier.align(Alignment.BottomStart).fillMaxWidth()
                 .onSizeChanged { bottomBarPx = it.height }
-                .background(Brush.verticalGradient(
-                    0f to bg.copy(alpha = 0f), 0.3f to bg.copy(alpha = 0.92f), 1f to bg.copy(alpha = 0.92f),
-                ))
+                .background(bg.copy(alpha = 0.5f))
                 .blockTouches()
                 .navigationBarsPadding()
                 .imePadding(),
@@ -370,7 +367,9 @@ private fun TabsBar(vm: AppViewModel) {
             Row(
                 Modifier
                     .clip(RoundedCornerShape(16.dp))
-                    .background(if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant)
+                    // Заливка непрозрачная: активная — терракотовый оттенок, сведённый
+                    // на фон (тот же вид, но сообщения под вкладкой не просвечивают)
+                    .background(if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f).compositeOver(MaterialTheme.colorScheme.background) else MaterialTheme.colorScheme.surfaceVariant)
                     .clickable { vm.activeTab = t }
                     .padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -614,6 +613,7 @@ private fun SquareBtn(
         modifier
             .size(size)
             .clip(RoundedCornerShape(7.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)   // 100% заливка, не просвечивает
             .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f), RoundedCornerShape(7.dp))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -706,12 +706,19 @@ private fun InputBar(vm: AppViewModel, tab: String, chat: ChatState) {
                 modifier = Modifier.weight(1f),
                 maxLines = 6,
                 shape = RoundedCornerShape(22.dp),
+                // Непрозрачная заливка поля — сообщения под ним не просвечивают
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    disabledContainerColor = MaterialTheme.colorScheme.surface,
+                ),
             )
             Spacer(Modifier.width(6.dp))
             if (chat.running) {
                 IconButton(
                     onClick = { vm.interrupt(tab) },
-                    modifier = Modifier.padding(bottom = 4.dp).size(48.dp).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.error.copy(alpha = 0.15f)),
+                    modifier = Modifier.padding(bottom = 4.dp).size(48.dp).clip(RoundedCornerShape(24.dp))
+                        .background(MaterialTheme.colorScheme.error.copy(alpha = 0.15f).compositeOver(MaterialTheme.colorScheme.background)),
                 ) { Icon(Icons.Filled.Stop, "Прервать", tint = MaterialTheme.colorScheme.error) }
             } else {
                 val canSend = (text.isNotBlank() || attachments.isNotEmpty()) && !awaitingAnswer
@@ -722,7 +729,7 @@ private fun InputBar(vm: AppViewModel, tab: String, chat: ChatState) {
                     },
                     enabled = canSend,
                     modifier = Modifier.padding(bottom = 4.dp).size(48.dp).clip(RoundedCornerShape(24.dp))
-                        .background(if (canSend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)),
+                        .background(if (canSend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.4f).compositeOver(MaterialTheme.colorScheme.background)),
                 ) { Icon(Icons.AutoMirrored.Filled.Send, "Отправить", tint = MaterialTheme.colorScheme.onPrimary) }
             }
         }
