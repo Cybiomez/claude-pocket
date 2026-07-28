@@ -1,9 +1,17 @@
 package dev.claudepocket.ui
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Arrangement
@@ -36,7 +44,9 @@ import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Slider
 import androidx.compose.material.icons.filled.Stop
@@ -56,41 +66,143 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.claudepocket.AppViewModel
 import dev.claudepocket.ChatItem
 import dev.claudepocket.ChatState
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 @Composable
 fun ChatScreen(vm: AppViewModel) {
     val tab = vm.activeTab ?: return
     val chat = vm.chats[tab] ?: return
+    val scope = rememberCoroutineScope()
 
     Column(Modifier.fillMaxSize().systemBarsPadding().imePadding()) {
         TabsBar(vm)
         Box(Modifier.weight(1f)) {
-            when {
-                chat.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                else -> MessageList(chat)
+            // key(tab) — состояние прокрутки своё у каждой вкладки
+            key(tab) {
+                val listState = rememberLazyListState()
+                val total = chat.items.size + (if (chat.streaming.isNotBlank()) 1 else 0)
+                // Пользователь и так внизу?
+                val atBottom by remember {
+                    derivedStateOf {
+                        val info = listState.layoutInfo
+                        val last = info.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf true
+                        last.index >= info.totalItemsCount - 2
+                    }
+                }
+                // Вход в диалог — сразу к последнему сообщению (мгновенно, один раз)
+                var didInitial by remember { mutableStateOf(false) }
+                LaunchedEffect(chat.loading, total) {
+                    if (!didInitial && !chat.loading && total > 0) {
+                        listState.scrollToItem(total - 1); didInitial = true
+                    }
+                }
+                // Дальше автопрокрутка — только если пользователь внизу
+                LaunchedEffect(total, chat.streaming.length / 200) {
+                    if (didInitial && total > 0 && atBottom) listState.animateScrollToItem(total - 1)
+                }
+
+                when {
+                    chat.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                    else -> {
+                        MessageList(chat, listState)
+                        ChatScrollbar(listState, Modifier.align(Alignment.CenterEnd))
+                        // Кнопка «в самый низ» — когда список не внизу
+                        if (!atBottom && total > 1) {
+                            FilledIconButton(
+                                onClick = { scope.launch { listState.animateScrollToItem(total - 1) } },
+                                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).size(40.dp),
+                            ) { Icon(Icons.Filled.KeyboardArrowDown, "В самый низ", Modifier.size(22.dp)) }
+                        }
+                    }
+                }
+                // Свайп от левого края вправо — назад к списку сессий
+                Box(
+                    Modifier.align(Alignment.CenterStart).fillMaxHeight().width(22.dp)
+                        .pointerInput(tab) {
+                            var dx = 0f
+                            detectHorizontalDragGestures(
+                                onDragStart = { dx = 0f },
+                                onDragEnd = { if (dx > 120f) vm.activeTab = null },
+                            ) { _, amount -> dx += amount }
+                        },
+                )
             }
         }
         StatusFooter(vm, chat)
         InputBar(vm, tab, chat)
+    }
+}
+
+// Тонкий скроллбар справа: виден при прокрутке/перетаскивании, можно тянуть
+@Composable
+private fun ChatScrollbar(listState: LazyListState, modifier: Modifier = Modifier) {
+    val scope = rememberCoroutineScope()
+    var dragging by remember { mutableStateOf(false) }
+    val metrics by remember {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            Triple(info.totalItemsCount, info.visibleItemsInfo.size, listState.firstVisibleItemIndex)
+        }
+    }
+    val (total, visible, first) = metrics
+    if (total == 0 || visible >= total) return
+    val show = dragging || listState.isScrollInProgress
+    val alpha by animateFloatAsState(if (show) 0.45f else 0f, label = "scrollbar")
+    var trackH by remember { mutableStateOf(1) }
+    val thumbFrac = (visible.toFloat() / total).coerceIn(0.06f, 1f)
+    val span = (total - visible).coerceAtLeast(1)
+    val posFrac = (first.toFloat() / span).coerceIn(0f, 1f)
+
+    Box(
+        modifier.fillMaxHeight().width(8.dp).padding(vertical = 4.dp)
+            .onSizeChanged { trackH = it.height },
+    ) {
+        Box(
+            Modifier
+                .fillMaxHeight(thumbFrac)
+                .width(4.dp)
+                .align(Alignment.TopCenter)
+                .offset { IntOffset(0, ((trackH * (1f - thumbFrac)) * posFrac).roundToInt()) }
+                .clip(RoundedCornerShape(2.dp))
+                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = alpha))
+                .draggable(
+                    orientation = Orientation.Vertical,
+                    state = rememberDraggableState { delta ->
+                        val denom = trackH * (1f - thumbFrac)
+                        if (denom > 0f) {
+                            val newPos = (posFrac + delta / denom).coerceIn(0f, 1f)
+                            val idx = (newPos * span).roundToInt().coerceIn(0, total - 1)
+                            scope.launch { listState.scrollToItem(idx) }
+                        }
+                    },
+                    onDragStarted = { dragging = true },
+                    onDragStopped = { dragging = false },
+                ),
+        )
     }
 }
 
@@ -134,21 +246,7 @@ private fun TabsBar(vm: AppViewModel) {
 }
 
 @Composable
-private fun MessageList(chat: ChatState) {
-    val listState = rememberLazyListState()
-    val total = chat.items.size + (if (chat.streaming.isNotBlank()) 1 else 0)
-    // Прокручиваем вниз только когда пользователь и так внизу. Если он поднялся
-    // читать сообщение выше — новые ответы инструмента экран не дёргают.
-    val atBottom by remember {
-        derivedStateOf {
-            val info = listState.layoutInfo
-            val last = info.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf true
-            last.index >= info.totalItemsCount - 2
-        }
-    }
-    LaunchedEffect(total, chat.streaming.length / 200) {
-        if (total > 0 && atBottom) listState.animateScrollToItem(total - 1)
-    }
+private fun MessageList(chat: ChatState, listState: androidx.compose.foundation.lazy.LazyListState) {
     // Оборачиваем в SelectionContainer — иначе текст сообщений нельзя выделить и скопировать
     SelectionContainer(Modifier.fillMaxSize()) {
         LazyColumn(

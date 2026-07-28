@@ -2,11 +2,13 @@ package dev.claudepocket.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
@@ -25,6 +28,8 @@ import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -57,6 +62,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -93,6 +99,8 @@ fun SessionsScreen(vm: AppViewModel) {
     var createFolderOpen by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<FolderInfo?>(null) }
     var deleteTarget by remember { mutableStateOf<FolderInfo?>(null) }
+    var renameSessionFor by remember { mutableStateOf<SessionInfo?>(null) }
+    var deleteSessionFor by remember { mutableStateOf<SessionInfo?>(null) }
 
     Scaffold(
         modifier = Modifier.systemBarsPadding(),
@@ -103,7 +111,8 @@ fun SessionsScreen(vm: AppViewModel) {
             }
         },
     ) { pad ->
-        Column(Modifier.fillMaxSize().padding(pad)) {
+      Box(Modifier.fillMaxSize().padding(pad)) {
+        Column(Modifier.fillMaxSize()) {
             Box(Modifier.padding(horizontal = 16.dp)) { UpdateBanner(vm) }
             // Заголовок отдельной строкой — не «едет» от числа кнопок ниже
             Text(
@@ -147,21 +156,31 @@ fun SessionsScreen(vm: AppViewModel) {
             }
 
             // Папки сверху (свёрнутые по умолчанию), ниже — сессии без папки.
-            // Папка с открытой во вкладках сессией разворачивается сама.
+            // Разворачиваются только вручную (тап по строке папки).
             val byFolder = vm.sessions.groupBy { vm.sessionFolder[it.id] }
             val rows = buildList {
                 for (f in vm.folders) {
                     val inside = byFolder[f.id].orEmpty()
-                    val hasOpen = inside.any { it.id in vm.tabs }
-                    val expanded = hasOpen || f.id in vm.expandedFolders
+                    val expanded = f.id in vm.expandedFolders
                     add(ListRow.Folder(f, inside.size, inside.any { it.running }, expanded))
                     if (expanded) inside.forEach { add(ListRow.Session(it, inFolder = true)) }
                 }
                 byFolder[null].orEmpty().forEach { add(ListRow.Session(it, inFolder = false)) }
             }
 
+            // Подъём списка наверх: при создании папки и когда сверху появляется
+            // другой элемент (сессия поднялась по дате / новая папка)
+            val listState = rememberLazyListState()
+            val topKey = rows.firstOrNull()?.let {
+                if (it is ListRow.Folder) "f:${it.folder.id}" else "s:${(it as ListRow.Session).s.id}"
+            }
+            LaunchedEffect(topKey, vm.folders.size) {
+                if (topKey != null) listState.animateScrollToItem(0)
+            }
+
             LazyColumn(
-                Modifier.weight(1f),
+                state = listState,
+                modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
             ) {
@@ -178,6 +197,7 @@ fun SessionsScreen(vm: AppViewModel) {
                         )
                         is ListRow.Session -> SessionCard(
                             s = r.s,
+                            displayName = vm.sessionNames[r.s.id] ?: r.s.title,
                             inFolder = r.inFolder,
                             isOpen = r.s.id in vm.tabs,
                             folders = vm.folders,
@@ -185,12 +205,32 @@ fun SessionsScreen(vm: AppViewModel) {
                             onOpen = { vm.openTab(r.s.id) },
                             onMove = { folderId -> vm.moveSessionToFolder(r.s.id, folderId) },
                             onNewFolder = { createFolderFor = r.s.id; createFolderOpen = true },
+                            onRename = { renameSessionFor = r.s },
+                            onDelete = { deleteSessionFor = r.s },
                         )
                     }
                 }
             }
             SessionsFooter(vm)
         }
+        // Свайп от правого края влево — к последней открытой сессии (или верхней)
+        Box(
+            Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(22.dp)
+                .pointerInput(Unit) {
+                    var dx = 0f
+                    detectHorizontalDragGestures(
+                        onDragStart = { dx = 0f },
+                        onDragEnd = {
+                            if (dx < -120f) {
+                                val t = vm.tabs.lastOrNull()
+                                if (t != null) vm.activeTab = t
+                                else vm.sessions.firstOrNull()?.let { vm.openTab(it.id) }
+                            }
+                        },
+                    ) { _, amount -> dx += amount }
+                },
+        )
+      }
     }
 
     if (createFolderOpen) {
@@ -230,6 +270,30 @@ fun SessionsScreen(vm: AppViewModel) {
                 }
             },
             dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("Отмена") } },
+        )
+    }
+
+    renameSessionFor?.let { s ->
+        NameDialog(
+            title = "Переименовать сессию",
+            initial = vm.sessionNames[s.id] ?: s.title,
+            confirmLabel = "Сохранить",
+            onDismiss = { renameSessionFor = null },
+            onConfirm = { name -> vm.renameSession(s.id, name); renameSessionFor = null },
+        )
+    }
+
+    deleteSessionFor?.let { s ->
+        AlertDialog(
+            onDismissRequest = { deleteSessionFor = null },
+            title = { Text("Удалить сессию?") },
+            text = { Text("«${vm.sessionNames[s.id] ?: s.title}» будет удалена вместе с транскриптом на сервере. Это необратимо.") },
+            confirmButton = {
+                TextButton(onClick = { vm.deleteSession(s.id); deleteSessionFor = null }) {
+                    Text("Удалить", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { deleteSessionFor = null }) { Text("Отмена") } },
         )
     }
 }
@@ -295,6 +359,7 @@ private fun FolderRow(row: ListRow.Folder, onToggle: () -> Unit, onRename: () ->
 @Composable
 private fun SessionCard(
     s: SessionInfo,
+    displayName: String,
     inFolder: Boolean,
     isOpen: Boolean,
     folders: List<FolderInfo>,
@@ -302,6 +367,8 @@ private fun SessionCard(
     onOpen: () -> Unit,
     onMove: (String?) -> Unit,
     onNewFolder: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val accent = MaterialTheme.colorScheme.primary
@@ -322,7 +389,7 @@ private fun SessionCard(
                     )
                     if (s.running) Spacer(Modifier.size(6.dp))
                     Text(
-                        s.title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp,
+                        displayName, fontWeight = FontWeight.SemiBold, fontSize = 15.sp,
                         maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
                         color = if (isOpen) accent else MaterialTheme.colorScheme.onSurface,
                     )
@@ -375,12 +442,25 @@ private fun SessionCard(
                         onClick = { menuOpen = false; onNewFolder() },
                     )
                     if (currentFolderId != null) {
-                        HorizontalDivider()
                         DropdownMenuItem(
                             text = { Text("Убрать из папки") },
                             onClick = { menuOpen = false; onMove(null) },
                         )
                     }
+                    HorizontalDivider()
+                    DropdownMenuItem(
+                        text = { Text("Переименовать") },
+                        leadingIcon = { Icon(Icons.Filled.Edit, null, Modifier.size(20.dp)) },
+                        onClick = { menuOpen = false; onRename() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Удалить сессию", color = MaterialTheme.colorScheme.error) },
+                        leadingIcon = {
+                            Icon(Icons.Filled.Delete, null, Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.error)
+                        },
+                        onClick = { menuOpen = false; onDelete() },
+                    )
                 }
             }
         }

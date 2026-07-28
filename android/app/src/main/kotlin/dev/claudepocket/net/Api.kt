@@ -66,6 +66,7 @@ data class FolderInfo(val id: String, val name: String)
 data class FoldersDoc(
     val folders: List<FolderInfo> = emptyList(),
     val assignments: Map<String, String> = emptyMap(),
+    val names: Map<String, String> = emptyMap(),   // кастомные имена сессий
 )
 
 // Ответ /api/file: либо каталог со списком, либо файл с содержимым
@@ -134,8 +135,18 @@ class ApiClient(private val baseUrl: String, private val token: String) {
             put("assignments", buildJsonObject {
                 doc.assignments.forEach { (sessionId, folderId) -> put(sessionId, folderId) }
             })
+            put("names", buildJsonObject {
+                doc.names.forEach { (sessionId, name) -> put(sessionId, name) }
+            })
         })
     )
+
+    // Удаление сессии вместе с транскриптом
+    suspend fun deleteSession(sessionId: String): Boolean = withContext(Dispatchers.IO) {
+        http.newCall(authedRequest("$baseUrl/api/sessions/$sessionId").delete().build()).execute().use { r ->
+            r.isSuccessful
+        }
+    }
 
     private fun parseFolders(o: JsonObject): FoldersDoc {
         val folders = o["folders"]?.jsonArray.orEmpty().mapNotNull { el ->
@@ -147,7 +158,10 @@ class ApiClient(private val baseUrl: String, private val token: String) {
         val assignments = o["assignments"]?.jsonObject.orEmpty()
             .mapNotNull { (k, v) -> v.jsonPrimitive.contentOrNull?.let { k to it } }
             .toMap()
-        return FoldersDoc(folders, assignments)
+        val names = o["names"]?.jsonObject.orEmpty()
+            .mapNotNull { (k, v) -> v.jsonPrimitive.contentOrNull?.let { k to it } }
+            .toMap()
+        return FoldersDoc(folders, assignments, names)
     }
 
     suspend fun sessions(): List<SessionInfo> =

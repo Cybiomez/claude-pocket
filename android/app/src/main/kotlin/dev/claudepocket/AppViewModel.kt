@@ -84,6 +84,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // expandedFolders — только состояние сеанса: по умолчанию всё свёрнуто.
     var folders by mutableStateOf<List<FolderInfo>>(emptyList())
     var sessionFolder by mutableStateOf<Map<String, String>>(emptyMap())
+    var sessionNames by mutableStateOf<Map<String, String>>(emptyMap())
     var expandedFolders by mutableStateOf<Set<String>>(emptySet())
 
     // Вкладки: ключ = sessionId либо temp 'new-...'
@@ -505,6 +506,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             runCatching { a.folders() }.onSuccess {
                 folders = it.folders
                 sessionFolder = it.assignments
+                sessionNames = it.names
             }
         }
     }
@@ -514,10 +516,34 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private fun pushFolders() {
         val a = api ?: return
         viewModelScope.launch {
-            runCatching { a.saveFolders(FoldersDoc(folders, sessionFolder)) }.onSuccess {
+            runCatching { a.saveFolders(FoldersDoc(folders, sessionFolder, sessionNames)) }.onSuccess {
                 folders = it.folders
                 sessionFolder = it.assignments
+                sessionNames = it.names
             }.onFailure { toast("Не удалось сохранить папки: ${it.message ?: "нет связи"}") }
+        }
+    }
+
+    // Кастомное имя сессии (пустое — сбросить к имени из транскрипта)
+    fun renameSession(sessionId: String, name: String) {
+        val clean = name.trim().take(80)
+        sessionNames = if (clean.isBlank()) sessionNames - sessionId
+        else sessionNames + (sessionId to clean)
+        pushFolders()
+    }
+
+    // Удаление сессии вместе с транскриптом на сервере
+    fun deleteSession(sessionId: String) {
+        val a = api ?: return
+        // Убираем из открытых вкладок
+        if (sessionId in tabs) closeTab(sessionId)
+        sessionFolder = sessionFolder - sessionId
+        sessionNames = sessionNames - sessionId
+        sessions = sessions.filterNot { it.id == sessionId }
+        viewModelScope.launch {
+            runCatching { a.deleteSession(sessionId) }
+                .onSuccess { refreshSessions() }
+                .onFailure { toast("Не удалось удалить сессию: ${it.message ?: "нет связи"}") }
         }
     }
 

@@ -3,16 +3,25 @@ package dev.claudepocket.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.DisableSelection
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -33,20 +42,41 @@ fun MarkdownText(text: String, modifier: Modifier = Modifier) {
                 // Контрастный фон + рамка — иначе блок сливается с пузырём
                 // ассистента (у него тоже surfaceVariant) и «блока не видно».
                 val codeShape = RoundedCornerShape(8.dp)
-                Text(
-                    seg.text.trimEnd(),
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier
+                val code = seg.text.trimEnd()
+                val clipboard = LocalClipboardManager.current
+                Box(
+                    Modifier
                         .padding(vertical = 4.dp)
                         .fillMaxWidth()
                         .clip(codeShape)
                         .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f))
-                        .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f), codeShape)
-                        .horizontalScroll(rememberScrollState())
-                        .padding(10.dp),
-                )
+                        .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f), codeShape),
+                ) {
+                    Text(
+                        code,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(10.dp)
+                            .padding(end = 28.dp),   // место под кнопку копирования
+                    )
+                    // Кнопка быстрого копирования всего блока
+                    DisableSelection {
+                        IconButton(
+                            onClick = { clipboard.setText(AnnotatedString(code)) },
+                            modifier = Modifier.align(Alignment.TopEnd).size(28.dp),
+                        ) {
+                            Icon(
+                                Icons.Filled.ContentCopy, "Скопировать код",
+                                Modifier.size(15.dp),
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            )
+                        }
+                    }
+                }
             } else {
                 for (line in seg.text.split('\n')) {
                     val t = line.trimEnd()
