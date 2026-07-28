@@ -252,6 +252,7 @@ private fun QuestionCard(questions: List<dev.claudepocket.net.PocketQuestion>, o
             OutlinedTextField(
                 custom, { custom = it }, label = { Text("Свой ответ (необязательно)") },
                 modifier = Modifier.fillMaxWidth().padding(top = 6.dp), singleLine = true,
+                shape = RoundedCornerShape(22.dp),
             )
             androidx.compose.material3.Button(
                 onClick = {
@@ -273,6 +274,7 @@ private fun QuestionCard(questions: List<dev.claudepocket.net.PocketQuestion>, o
                 OutlinedTextField(
                     custom, { custom = it }, label = { Text("Свой ответ") },
                     modifier = Modifier.weight(1f), singleLine = true,
+                    shape = RoundedCornerShape(22.dp),
                 )
                 IconButton(onClick = { if (custom.isNotBlank()) commit(custom.trim()) }, enabled = custom.isNotBlank()) {
                     Icon(Icons.AutoMirrored.Filled.Send, "Отправить свой ответ")
