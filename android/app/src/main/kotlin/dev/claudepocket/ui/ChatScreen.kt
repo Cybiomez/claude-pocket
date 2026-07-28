@@ -165,7 +165,7 @@ fun ChatScreen(vm: AppViewModel) {
         Box(
             Modifier.align(Alignment.TopStart).fillMaxWidth()
                 .onSizeChanged { topBarPx = it.height }
-                .background(bg.copy(alpha = 0.5f))
+                .background(bg.copy(alpha = 0.75f))
                 .blockTouches()
                 .statusBarsPadding(),
         ) { TabsBar(vm) }
@@ -174,7 +174,7 @@ fun ChatScreen(vm: AppViewModel) {
         Column(
             Modifier.align(Alignment.BottomStart).fillMaxWidth()
                 .onSizeChanged { bottomBarPx = it.height }
-                .background(bg.copy(alpha = 0.5f))
+                .background(bg.copy(alpha = 0.75f))
                 .blockTouches()
                 .navigationBarsPadding()
                 .imePadding(),
@@ -364,23 +364,24 @@ private fun TabsBar(vm: AppViewModel) {
             val title = vm.sessions.firstOrNull { it.id == t }?.title
                 ?: vm.chats[t]?.title?.ifBlank { null }
                 ?: if (t.startsWith("new-")) "Новая" else t.take(8)
+            // Активная вкладка — базовый терракотовый (primary из палитры), текст и
+            // иконки на ней — onPrimary для контраста; неактивная — surfaceVariant
+            val tabFg = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
             Row(
                 Modifier
                     .clip(RoundedCornerShape(16.dp))
-                    // Заливка непрозрачная: активная — терракотовый оттенок, сведённый
-                    // на фон (тот же вид, но сообщения под вкладкой не просвечивают)
-                    .background(if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f).compositeOver(MaterialTheme.colorScheme.background) else MaterialTheme.colorScheme.surfaceVariant)
+                    .background(if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
                     .clickable { vm.activeTab = t }
                     .padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (vm.chats[t]?.running == true) {
-                    CircularProgressIndicator(Modifier.size(10.dp), strokeWidth = 1.5.dp)
+                    CircularProgressIndicator(Modifier.size(10.dp), strokeWidth = 1.5.dp, color = tabFg)
                     Spacer(Modifier.width(6.dp))
                 }
-                Text(title.take(18), fontSize = 12.sp, maxLines = 1)
+                Text(title.take(18), fontSize = 12.sp, maxLines = 1, color = tabFg)
                 IconButton(onClick = { vm.closeTab(t) }, modifier = Modifier.size(24.dp)) {
-                    Icon(Icons.Filled.Close, "Закрыть", modifier = Modifier.size(13.dp))
+                    Icon(Icons.Filled.Close, "Закрыть", modifier = Modifier.size(13.dp), tint = tabFg)
                 }
             }
         }
@@ -729,7 +730,8 @@ private fun InputBar(vm: AppViewModel, tab: String, chat: ChatState) {
                     },
                     enabled = canSend,
                     modifier = Modifier.padding(bottom = 4.dp).size(48.dp).clip(RoundedCornerShape(24.dp))
-                        .background(if (canSend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.4f).compositeOver(MaterialTheme.colorScheme.background)),
+                        // Базовый терракотовый (primary); неактивность видна по потускневшей иконке (enabled=canSend)
+                        .background(MaterialTheme.colorScheme.primary),
                 ) { Icon(Icons.AutoMirrored.Filled.Send, "Отправить", tint = MaterialTheme.colorScheme.onPrimary) }
             }
         }
