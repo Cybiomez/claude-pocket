@@ -22,10 +22,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -76,8 +78,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -98,54 +103,102 @@ fun ChatScreen(vm: AppViewModel) {
     val chat = vm.chats[tab] ?: return
     val scope = rememberCoroutineScope()
 
-    Column(Modifier.fillMaxSize().systemBarsPadding().imePadding()) {
-        TabsBar(vm)
-        Box(Modifier.weight(1f)) {
-            // key(tab) — состояние прокрутки своё у каждой вкладки
-            key(tab) {
-                val listState = rememberLazyListState()
-                val total = chat.items.size + (if (chat.streaming.isNotBlank()) 1 else 0)
-                // Пользователь и так внизу?
-                val atBottom by remember {
-                    derivedStateOf {
-                        val info = listState.layoutInfo
-                        val last = info.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf true
-                        last.index >= info.totalItemsCount - 2
-                    }
-                }
-                // Вход в диалог — сразу к последнему сообщению (мгновенно, один раз)
-                var didInitial by remember { mutableStateOf(false) }
-                LaunchedEffect(chat.loading, total) {
-                    if (!didInitial && !chat.loading && total > 0) {
-                        listState.scrollToItem(total - 1); didInitial = true
-                    }
-                }
-                // Дальше автопрокрутка — только если пользователь внизу
-                LaunchedEffect(total, chat.streaming.length / 200) {
-                    if (didInitial && total > 0 && atBottom) listState.animateScrollToItem(total - 1)
-                }
+    val density = LocalDensity.current
+    val bg = MaterialTheme.colorScheme.background
+    // Список едет под панелями (Telegram-style), поэтому высоты шапки и низа
+    // замеряем и отдаём в contentPadding — сообщения не обрезаются за интерфейсом.
+    var topBarPx by remember { mutableStateOf(0) }
+    var bottomBarPx by remember { mutableStateOf(0) }
+    val topPad = with(density) { topBarPx.toDp() }
+    val bottomPad = with(density) { bottomBarPx.toDp() }
 
-                when {
-                    chat.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                    else -> {
-                        MessageList(chat, listState)
-                        ChatScrollbar(listState, Modifier.align(Alignment.CenterEnd))
-                        // Кнопка «в самый низ» — когда список не внизу
-                        if (!atBottom && total > 1) {
-                            FilledIconButton(
-                                onClick = { scope.launch { listState.animateScrollToItem(total - 1) } },
-                                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).size(40.dp),
-                            ) { Icon(Icons.Filled.KeyboardArrowDown, "В самый низ", Modifier.size(22.dp)) }
-                        }
+    Box(Modifier.fillMaxSize()) {
+        // ── Лента на всю высоту, под полупрозрачными панелями ──
+        // key(tab) — состояние прокрутки своё у каждой вкладки
+        key(tab) {
+            val listState = rememberLazyListState()
+            val total = chat.items.size + (if (chat.streaming.isNotBlank()) 1 else 0)
+            // Пользователь и так внизу?
+            val atBottom by remember {
+                derivedStateOf {
+                    val info = listState.layoutInfo
+                    val last = info.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf true
+                    last.index >= info.totalItemsCount - 2
+                }
+            }
+            // Вход в диалог — сразу к последнему сообщению (мгновенно, один раз)
+            var didInitial by remember { mutableStateOf(false) }
+            LaunchedEffect(chat.loading, total) {
+                if (!didInitial && !chat.loading && total > 0) {
+                    listState.scrollToItem(total - 1); didInitial = true
+                }
+            }
+            // Дальше автопрокрутка — только если пользователь внизу
+            LaunchedEffect(total, chat.streaming.length / 200) {
+                if (didInitial && total > 0 && atBottom) listState.animateScrollToItem(total - 1)
+            }
+
+            when {
+                chat.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                else -> {
+                    MessageList(chat, listState, topPad, bottomPad)
+                    // Скроллбар — только в видимой зоне между панелями
+                    ChatScrollbar(
+                        listState,
+                        Modifier.align(Alignment.CenterEnd).padding(top = topPad, bottom = bottomPad),
+                    )
+                    // Кнопка «в самый низ» — когда список не внизу; над панелью ввода
+                    if (!atBottom && total > 1) {
+                        FilledIconButton(
+                            onClick = { scope.launch { listState.animateScrollToItem(total - 1) } },
+                            modifier = Modifier.align(Alignment.BottomEnd)
+                                .padding(end = 16.dp, bottom = bottomPad + 16.dp).size(40.dp),
+                        ) { Icon(Icons.Filled.KeyboardArrowDown, "В самый низ", Modifier.size(22.dp)) }
                     }
                 }
             }
         }
-        StatusFooter(vm, chat)
-        if (chat.pendingQuestions.isNotEmpty()) {
-            QuestionCard(chat.pendingQuestions) { answers -> vm.answerQuestion(tab, answers) }
+
+        // ── Шапка поверх: полупрозрачная, к списку затухает; тач под ней в ленту
+        // не проходит (blockTouches гасит касания на всей площади панели) ──
+        Box(
+            Modifier.align(Alignment.TopStart).fillMaxWidth()
+                .onSizeChanged { topBarPx = it.height }
+                .background(Brush.verticalGradient(
+                    0f to bg.copy(alpha = 0.92f), 0.7f to bg.copy(alpha = 0.92f), 1f to bg.copy(alpha = 0f),
+                ))
+                .blockTouches()
+                .statusBarsPadding(),
+        ) { TabsBar(vm) }
+
+        // ── Низ поверх: футер + опросник + ввод; фон затухает вверх к списку ──
+        Column(
+            Modifier.align(Alignment.BottomStart).fillMaxWidth()
+                .onSizeChanged { bottomBarPx = it.height }
+                .background(Brush.verticalGradient(
+                    0f to bg.copy(alpha = 0f), 0.3f to bg.copy(alpha = 0.92f), 1f to bg.copy(alpha = 0.92f),
+                ))
+                .blockTouches()
+                .navigationBarsPadding()
+                .imePadding(),
+        ) {
+            StatusFooter(vm, chat)
+            if (chat.pendingQuestions.isNotEmpty()) {
+                QuestionCard(chat.pendingQuestions) { answers -> vm.answerQuestion(tab, answers) }
+            }
+            InputBar(vm, tab, chat)
         }
-        InputBar(vm, tab, chat)
+    }
+}
+
+// Гасит касания на всей площади композита: нажатия по прозрачной зоне панели
+// не проваливаются в ленту под ней. Интерактивные дети (кнопки, поле, скролл
+// чипов) получают событие раньше — им это не мешает.
+private fun Modifier.blockTouches(): Modifier = this.pointerInput(Unit) {
+    awaitPointerEventScope {
+        while (true) {
+            awaitPointerEvent().changes.forEach { it.consume() }
+        }
     }
 }
 
@@ -337,13 +390,21 @@ private fun TabsBar(vm: AppViewModel) {
 }
 
 @Composable
-private fun MessageList(chat: ChatState, listState: androidx.compose.foundation.lazy.LazyListState) {
+private fun MessageList(
+    chat: ChatState, listState: androidx.compose.foundation.lazy.LazyListState,
+    topPad: Dp, bottomPad: Dp,
+) {
     // Оборачиваем в SelectionContainer — иначе текст сообщений нельзя выделить и скопировать
     SelectionContainer(Modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+            // Верх/низ = высота панелей: первое и последнее сообщение полностью
+            // выезжают из-под шапки и панели ввода, а не прячутся за ними
+            contentPadding = PaddingValues(
+                start = 12.dp, end = 12.dp,
+                top = topPad + 8.dp, bottom = bottomPad + 8.dp,
+            ),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(chat.items, key = { it.itemKey }) { item -> ChatItemView(item) }
