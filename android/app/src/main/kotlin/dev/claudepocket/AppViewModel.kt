@@ -84,7 +84,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // expandedFolders — только состояние сеанса: по умолчанию всё свёрнуто.
     var folders by mutableStateOf<List<FolderInfo>>(emptyList())
     var sessionFolder by mutableStateOf<Map<String, String>>(emptyMap())
-    var sessionNames by mutableStateOf<Map<String, String>>(emptyMap())
     var expandedFolders by mutableStateOf<Set<String>>(emptySet())
 
     // Вкладки: ключ = sessionId либо temp 'new-...'
@@ -506,7 +505,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             runCatching { a.folders() }.onSuccess {
                 folders = it.folders
                 sessionFolder = it.assignments
-                sessionNames = it.names
             }
         }
     }
@@ -516,20 +514,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private fun pushFolders() {
         val a = api ?: return
         viewModelScope.launch {
-            runCatching { a.saveFolders(FoldersDoc(folders, sessionFolder, sessionNames)) }.onSuccess {
+            runCatching { a.saveFolders(FoldersDoc(folders, sessionFolder)) }.onSuccess {
                 folders = it.folders
                 sessionFolder = it.assignments
-                sessionNames = it.names
             }.onFailure { toast("Не удалось сохранить папки: ${it.message ?: "нет связи"}") }
         }
     }
 
-    // Кастомное имя сессии (пустое — сбросить к имени из транскрипта)
+    // Переименование сессии — пишет custom-title в транскрипт (как в Claude Code),
+    // имя синхронизируется на все устройства. Пустое имя — сброс к авто-имени.
     fun renameSession(sessionId: String, name: String) {
-        val clean = name.trim().take(80)
-        sessionNames = if (clean.isBlank()) sessionNames - sessionId
-        else sessionNames + (sessionId to clean)
-        pushFolders()
+        val a = api ?: return
+        viewModelScope.launch {
+            runCatching { a.setTitle(sessionId, name.trim().take(200)) }
+                .onSuccess { refreshSessions() }
+                .onFailure { toast("Не удалось переименовать: ${it.message ?: "нет связи"}") }
+        }
     }
 
     fun createFolder(name: String): String? {

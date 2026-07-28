@@ -2,13 +2,11 @@ package dev.claudepocket.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -61,7 +59,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -109,8 +106,7 @@ fun SessionsScreen(vm: AppViewModel) {
             }
         },
     ) { pad ->
-      Box(Modifier.fillMaxSize().padding(pad)) {
-        Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().padding(pad)) {
             Box(Modifier.padding(horizontal = 16.dp)) { UpdateBanner(vm) }
             // Заголовок отдельной строкой — не «едет» от числа кнопок ниже
             Text(
@@ -195,7 +191,7 @@ fun SessionsScreen(vm: AppViewModel) {
                         )
                         is ListRow.Session -> SessionCard(
                             s = r.s,
-                            displayName = vm.sessionNames[r.s.id] ?: r.s.title,
+                            displayName = r.s.title,
                             inFolder = r.inFolder,
                             isOpen = r.s.id in vm.tabs,
                             folders = vm.folders,
@@ -210,24 +206,6 @@ fun SessionsScreen(vm: AppViewModel) {
             }
             SessionsFooter(vm)
         }
-        // Свайп от правого края влево — к последней открытой сессии (или верхней)
-        Box(
-            Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(22.dp)
-                .pointerInput(Unit) {
-                    var dx = 0f
-                    detectHorizontalDragGestures(
-                        onDragStart = { dx = 0f },
-                        onDragEnd = {
-                            if (dx < -120f) {
-                                val t = vm.tabs.lastOrNull()
-                                if (t != null) vm.activeTab = t
-                                else vm.sessions.firstOrNull()?.let { vm.openTab(it.id) }
-                            }
-                        },
-                    ) { _, amount -> dx += amount }
-                },
-        )
-      }
     }
 
     if (createFolderOpen) {
@@ -273,7 +251,7 @@ fun SessionsScreen(vm: AppViewModel) {
     renameSessionFor?.let { s ->
         NameDialog(
             title = "Переименовать сессию",
-            initial = vm.sessionNames[s.id] ?: s.title,
+            initial = s.title,
             confirmLabel = "Сохранить",
             onDismiss = { renameSessionFor = null },
             onConfirm = { name -> vm.renameSession(s.id, name); renameSessionFor = null },

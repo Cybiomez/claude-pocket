@@ -39,15 +39,18 @@ export async function listSessions(cwd) {
 }
 
 async function readSessionMeta(file) {
-  let title = null, lastText = null, firstUserText = null, messageCount = 0;
+  // customTitle — имя, заданное пользователем в Claude Code (CLI/десктоп), высший
+  // приоритет. autoTitle — ai-title/summary. Берём последнюю запись каждого вида.
+  let customTitle = null, autoTitle = null, lastText = null, firstUserText = null, messageCount = 0;
   try {
     const rl = readline.createInterface({ input: fs.createReadStream(file), crlfDelay: Infinity });
     for await (const line of rl) {
       if (!line.trim()) continue;
       let rec;
       try { rec = JSON.parse(line); } catch { continue; }
-      if (rec.type === 'ai-title' && rec.aiTitle) title = rec.aiTitle;
-      if (rec.type === 'summary' && rec.summary) title = rec.summary;
+      if (rec.type === 'custom-title' && rec.customTitle != null) customTitle = rec.customTitle;
+      if (rec.type === 'ai-title' && rec.aiTitle) autoTitle = rec.aiTitle;
+      if (rec.type === 'summary' && rec.summary) autoTitle = rec.summary;
       if (rec.isSidechain) continue;
       if (rec.type === 'user' || rec.type === 'assistant') {
         messageCount++;
@@ -59,8 +62,23 @@ async function readSessionMeta(file) {
       }
     }
   } catch { /* файл мог исчезнуть */ }
-  if (!title && firstUserText) title = firstUserText.slice(0, 60);
+  // Пустой customTitle («») означает сброс к авто-имени
+  const title = (customTitle && customTitle.trim())
+    || autoTitle
+    || (firstUserText && firstUserText.slice(0, 60))
+    || null;
   return { title: title ?? '(без названия)', lastText: lastText?.slice(0, 120) ?? '', messageCount };
+}
+
+// Дописать запись custom-title в транскрипт — то же, что переименование в Claude Code.
+// Пустая строка сбрасывает к авто-имени.
+export function setCustomTitle(cwd, sessionId, customTitle) {
+  const safe = path.basename(sessionId).replace(/\.jsonl$/, '');
+  const file = path.join(projectsDir(cwd), safe + '.jsonl');
+  if (!fs.existsSync(file)) return false;
+  const rec = JSON.stringify({ type: 'custom-title', customTitle: String(customTitle), sessionId: safe });
+  fs.appendFileSync(file, rec + '\n');
+  return true;
 }
 
 function extractText(content) {

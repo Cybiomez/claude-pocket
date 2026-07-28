@@ -1,11 +1,12 @@
 package dev.claudepocket.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
@@ -75,7 +76,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontFamily
@@ -97,6 +97,10 @@ fun ChatScreen(vm: AppViewModel) {
     val tab = vm.activeTab ?: return
     val chat = vm.chats[tab] ?: return
     val scope = rememberCoroutineScope()
+
+    // Системная кнопка/жест «назад» — к списку сессий, а не выход из приложения.
+    // Это же ловит краевой свайп-назад при жестовой навигации.
+    BackHandler { vm.activeTab = null }
 
     Column(Modifier.fillMaxSize().systemBarsPadding().imePadding()) {
         TabsBar(vm)
@@ -139,17 +143,6 @@ fun ChatScreen(vm: AppViewModel) {
                         }
                     }
                 }
-                // Свайп от левого края вправо — назад к списку сессий
-                Box(
-                    Modifier.align(Alignment.CenterStart).fillMaxHeight().width(22.dp)
-                        .pointerInput(tab) {
-                            var dx = 0f
-                            detectHorizontalDragGestures(
-                                onDragStart = { dx = 0f },
-                                onDragEnd = { if (dx > 120f) vm.activeTab = null },
-                            ) { _, amount -> dx += amount }
-                        },
-                )
             }
         }
         StatusFooter(vm, chat)
@@ -157,7 +150,8 @@ fun ChatScreen(vm: AppViewModel) {
     }
 }
 
-// Тонкий скроллбар справа: виден при прокрутке/перетаскивании, можно тянуть
+// Тонкий скроллбар справа: заметен при прокрутке, при нажатии расширяется и тянется.
+// Широкая прозрачная зона захвата (22dp) — чтобы можно было ухватить пальцем.
 @Composable
 private fun ChatScrollbar(listState: LazyListState, modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
@@ -170,38 +164,43 @@ private fun ChatScrollbar(listState: LazyListState, modifier: Modifier = Modifie
     }
     val (total, visible, first) = metrics
     if (total == 0 || visible >= total) return
-    val show = dragging || listState.isScrollInProgress
-    val alpha by animateFloatAsState(if (show) 0.45f else 0f, label = "scrollbar")
+    // Виден слабо всегда (чтобы было за что взяться), ярче при прокрутке, ещё ярче при захвате
+    val alpha by animateFloatAsState(
+        if (dragging) 0.7f else if (listState.isScrollInProgress) 0.4f else 0.16f, label = "sbAlpha",
+    )
+    val barW by animateDpAsState(if (dragging) 10.dp else 4.dp, label = "sbWidth")
     var trackH by remember { mutableStateOf(1) }
     val thumbFrac = (visible.toFloat() / total).coerceIn(0.06f, 1f)
     val span = (total - visible).coerceAtLeast(1)
     val posFrac = (first.toFloat() / span).coerceIn(0f, 1f)
 
+    fun scrollToFrac(f: Float) {
+        val idx = (f.coerceIn(0f, 1f) * span).roundToInt().coerceIn(0, total - 1)
+        scope.launch { listState.scrollToItem(idx) }
+    }
+
+    // Зона захвата 22dp; перетаскивание где угодно по ней двигает бегунок
     Box(
-        modifier.fillMaxHeight().width(8.dp).padding(vertical = 4.dp)
-            .onSizeChanged { trackH = it.height },
+        modifier.fillMaxHeight().width(22.dp).padding(vertical = 4.dp)
+            .onSizeChanged { trackH = it.height }
+            .draggable(
+                orientation = Orientation.Vertical,
+                state = rememberDraggableState { delta ->
+                    val denom = trackH * (1f - thumbFrac)
+                    if (denom > 0f) scrollToFrac(posFrac + delta / denom)
+                },
+                onDragStarted = { dragging = true },
+                onDragStopped = { dragging = false },
+            ),
     ) {
         Box(
             Modifier
                 .fillMaxHeight(thumbFrac)
-                .width(4.dp)
-                .align(Alignment.TopCenter)
+                .width(barW)
+                .align(Alignment.TopEnd)
                 .offset { IntOffset(0, ((trackH * (1f - thumbFrac)) * posFrac).roundToInt()) }
-                .clip(RoundedCornerShape(2.dp))
-                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = alpha))
-                .draggable(
-                    orientation = Orientation.Vertical,
-                    state = rememberDraggableState { delta ->
-                        val denom = trackH * (1f - thumbFrac)
-                        if (denom > 0f) {
-                            val newPos = (posFrac + delta / denom).coerceIn(0f, 1f)
-                            val idx = (newPos * span).roundToInt().coerceIn(0, total - 1)
-                            scope.launch { listState.scrollToItem(idx) }
-                        }
-                    },
-                    onDragStarted = { dragging = true },
-                    onDragStopped = { dragging = false },
-                ),
+                .clip(RoundedCornerShape(3.dp))
+                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = alpha)),
         )
     }
 }
@@ -218,10 +217,9 @@ private fun TabsBar(vm: AppViewModel) {
         }
         for (t in vm.tabs) {
             val active = t == vm.activeTab
-            // Кастомное имя (переименование) — в приоритете и здесь, чтобы имя было одно везде
-            val title = vm.sessionNames[t]
+            // Имя из списка сессий (там уже custom-title) — в приоритете, чтобы было одно везде
+            val title = vm.sessions.firstOrNull { it.id == t }?.title
                 ?: vm.chats[t]?.title?.ifBlank { null }
-                ?: vm.sessions.firstOrNull { it.id == t }?.title
                 ?: if (t.startsWith("new-")) "Новая" else t.take(8)
             Row(
                 Modifier

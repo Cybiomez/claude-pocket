@@ -5,7 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { loadConfig, loadToken, UPLOADS_DIR } from './config.mjs';
 import { openStore } from './store.mjs';
-import { listSessions, readHistory } from './history.mjs';
+import { listSessions, readHistory, setCustomTitle } from './history.mjs';
 import { Manager, slimUsage } from './manager.mjs';
 
 const VERSION = '0.1.0';
@@ -62,17 +62,7 @@ function normalizeFolders(doc) {
       assignments[sessionId] = folderId;
     }
   }
-  // Кастомные имена сессий (переименование в приложении)
-  const names = {};
-  const nsrc = doc?.names;
-  if (nsrc && typeof nsrc === 'object' && !Array.isArray(nsrc)) {
-    for (const [sessionId, name] of Object.entries(nsrc)) {
-      if (typeof sessionId !== 'string' || typeof name !== 'string') continue;
-      const clean = name.trim().slice(0, 80);
-      if (clean) names[sessionId] = clean;
-    }
-  }
-  return { folders, assignments, names };
+  return { folders, assignments };
 }
 
 const server = http.createServer(async (req, res) => {
@@ -98,6 +88,14 @@ const server = http.createServer(async (req, res) => {
     }
 
     let m;
+    // Переименование сессии — пишем custom-title в транскрипт (как в Claude Code),
+    // поэтому имя синхронизируется на все устройства. Пустая строка — сброс.
+    if ((m = p.match(/^\/api\/sessions\/([^/]+)\/title$/)) && req.method === 'POST') {
+      const key = resolveKey(m[1]);
+      const body = JSON.parse((await readBody(req)).toString() || '{}');
+      const ok = setCustomTitle(cfg.cwd, key, (body.title ?? '').toString().slice(0, 200));
+      return json(res, ok ? 200 : 404, { ok });
+    }
     if ((m = p.match(/^\/api\/sessions\/([^/]+)\/history$/)) && req.method === 'GET') {
       const key = resolveKey(m[1]);
       const items = await readHistory(cfg.cwd, key);

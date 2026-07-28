@@ -66,7 +66,6 @@ data class FolderInfo(val id: String, val name: String)
 data class FoldersDoc(
     val folders: List<FolderInfo> = emptyList(),
     val assignments: Map<String, String> = emptyMap(),
-    val names: Map<String, String> = emptyMap(),   // кастомные имена сессий
 )
 
 // Ответ /api/file: либо каталог со списком, либо файл с содержимым
@@ -135,11 +134,13 @@ class ApiClient(private val baseUrl: String, private val token: String) {
             put("assignments", buildJsonObject {
                 doc.assignments.forEach { (sessionId, folderId) -> put(sessionId, folderId) }
             })
-            put("names", buildJsonObject {
-                doc.names.forEach { (sessionId, name) -> put(sessionId, name) }
-            })
         })
     )
+
+    // Переименование сессии: пишет custom-title в транскрипт (синхронизируется в Claude Code)
+    suspend fun setTitle(sessionId: String, title: String): Boolean =
+        post("/api/sessions/$sessionId/title", buildJsonObject { put("title", title) })["ok"]
+            ?.jsonPrimitive?.boolean ?: false
 
     private fun parseFolders(o: JsonObject): FoldersDoc {
         val folders = o["folders"]?.jsonArray.orEmpty().mapNotNull { el ->
@@ -151,10 +152,7 @@ class ApiClient(private val baseUrl: String, private val token: String) {
         val assignments = o["assignments"]?.jsonObject.orEmpty()
             .mapNotNull { (k, v) -> v.jsonPrimitive.contentOrNull?.let { k to it } }
             .toMap()
-        val names = o["names"]?.jsonObject.orEmpty()
-            .mapNotNull { (k, v) -> v.jsonPrimitive.contentOrNull?.let { k to it } }
-            .toMap()
-        return FoldersDoc(folders, assignments, names)
+        return FoldersDoc(folders, assignments)
     }
 
     suspend fun sessions(): List<SessionInfo> =

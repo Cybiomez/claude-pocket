@@ -13,12 +13,18 @@ fun gitTagVersion(): Pair<String, Int> {
         val out = ProcessBuilder("git", "describe", "--tags", "--abbrev=0")
             .directory(rootDir).redirectErrorStream(true).start()
             .inputStream.bufferedReader().readText().trim()
-        // Суффикс -dev.N и т.п. попадает в versionName, но не в versionCode:
-        // versionCode считается по базовой X.Y.Z, чтобы pre-release вставал поверх прошлого релиза
+        // Суффикс -dev.N попадает в versionName. versionCode = base*1000 + seq, где
+        // base = X.Y.Z, seq = номер dev-сборки (dev.N -> N), а у финального релиза
+        // seq = 999. Так dev-сборки внутри цикла строго растут (иначе Android видит
+        // одинаковый код и «зависает в переустановке»), а финал (999) встаёт поверх
+        // любой своей dev-сборки и поверх прошлых релизов.
         val m = Regex("^v(\\d+)\\.(\\d+)\\.(\\d+)(-[0-9A-Za-z.]+)?$").find(out) ?: return "0.0.0-dev" to 1
         val maj = m.groupValues[1]; val min = m.groupValues[2]; val pat = m.groupValues[3]
         val suffix = m.groupValues[4]
-        "$maj.$min.$pat$suffix" to (maj.toInt() * 10000 + min.toInt() * 100 + pat.toInt())
+        val base = maj.toInt() * 10000 + min.toInt() * 100 + pat.toInt()
+        val seq = if (suffix.isEmpty()) 999
+            else (Regex("(\\d+)$").find(suffix)?.value?.toInt() ?: 0).coerceIn(0, 998)
+        "$maj.$min.$pat$suffix" to (base * 1000 + seq)
     } catch (_: Exception) { "0.0.0-dev" to 1 }
 }
 val (verName, verCode) = gitTagVersion()
