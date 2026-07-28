@@ -576,6 +576,15 @@ private fun StatusFooter(vm: AppViewModel, chat: ChatState) {
             )
         }
         Spacer(Modifier.weight(1f))
+        // Версия реально работающей модели в конце строки (из getContextUsage),
+        // напр. «opus-4-8» — префикс «claude-» убираем для краткости
+        val model = ctx?.model?.removePrefix("claude-")
+        if (!model.isNullOrBlank()) {
+            Text(
+                model, fontSize = 10.5.sp, maxLines = 1,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+            )
+        }
     }
 }
 
@@ -738,9 +747,11 @@ private fun TuneMenu(vm: AppViewModel, tab: String, open: Boolean, dismiss: () -
         "acceptEdits" to "Авто-правки",
         "plan" to "План (без выполнения)",
     )
-    // null — модель по умолчанию (как в CLI); остальные — псевдонимы, их понимает SDK
+    // null — модель по умолчанию (как в CLI); остальные — псевдонимы семейств,
+    // их понимает и CLI, и SDK (opus/sonnet/haiku/fable → последняя версия семейства)
     val models = listOf(
         null to "По умолчанию",
+        "fable" to "Fable 5",
         "opus" to "Opus",
         "sonnet" to "Sonnet",
         "haiku" to "Haiku",
