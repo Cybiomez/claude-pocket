@@ -10,8 +10,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -45,7 +46,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -59,6 +59,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -96,16 +98,83 @@ fun SessionsScreen(vm: AppViewModel) {
     var deleteTarget by remember { mutableStateOf<FolderInfo?>(null) }
     var renameSessionFor by remember { mutableStateOf<SessionInfo?>(null) }
 
-    Scaffold(
-        modifier = Modifier.systemBarsPadding(),
-        containerColor = MaterialTheme.colorScheme.background,
-        floatingActionButton = {
-            FloatingActionButton(onClick = { vm.newTab(); nav.toChat() }, containerColor = MaterialTheme.colorScheme.primary) {
-                Icon(Icons.Filled.Add, "Новая сессия", tint = MaterialTheme.colorScheme.onPrimary)
+    val density = LocalDensity.current
+    val bg = MaterialTheme.colorScheme.background
+    // Список едет под панелями (как в чате): высоты шапки и футера замеряем и
+    // отдаём в contentPadding — первая и последняя карточки не режутся за панелью.
+    var topBarPx by remember { mutableStateOf(0) }
+    var bottomBarPx by remember { mutableStateOf(0) }
+    val topPad = with(density) { topBarPx.toDp() }
+    val bottomPad = with(density) { bottomBarPx.toDp() }
+
+    // Папки сверху (свёрнутые по умолчанию), ниже — сессии без папки.
+    // Разворачиваются только вручную (тап по строке папки).
+    val byFolder = vm.sessions.groupBy { vm.sessionFolder[it.id] }
+    val rows = buildList {
+        for (f in vm.folders) {
+            val inside = byFolder[f.id].orEmpty()
+            val expanded = f.id in vm.expandedFolders
+            add(ListRow.Folder(f, inside.size, inside.any { it.running }, expanded))
+            if (expanded) inside.forEach { add(ListRow.Session(it, inFolder = true)) }
+        }
+        byFolder[null].orEmpty().forEach { add(ListRow.Session(it, inFolder = false)) }
+    }
+
+    // Подъём списка наверх: при создании папки и когда сверху появляется
+    // другой элемент (сессия поднялась по дате / новая папка)
+    val listState = rememberLazyListState()
+    val topKey = rows.firstOrNull()?.let {
+        if (it is ListRow.Folder) "f:${it.folder.id}" else "s:${(it as ListRow.Session).s.id}"
+    }
+    LaunchedEffect(topKey, vm.folders.size) {
+        if (topKey != null) listState.animateScrollToItem(0)
+    }
+
+    Box(Modifier.fillMaxSize()) {
+        // ── Список на всю высоту, под полупрозрачными панелями ──
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                start = 16.dp, end = 16.dp, top = topPad + 8.dp, bottom = bottomPad + 8.dp,
+            ),
+        ) {
+            items(
+                rows,
+                key = { r -> if (r is ListRow.Folder) "f:${r.folder.id}" else "s:${(r as ListRow.Session).s.id}" },
+            ) { r ->
+                when (r) {
+                    is ListRow.Folder -> FolderRow(
+                        row = r,
+                        onToggle = { vm.toggleFolder(r.folder.id) },
+                        onRename = { renameTarget = r.folder },
+                        onDelete = { deleteTarget = r.folder },
+                    )
+                    is ListRow.Session -> SessionCard(
+                        s = r.s,
+                        displayName = r.s.title,
+                        inFolder = r.inFolder,
+                        isOpen = r.s.id in vm.tabs,
+                        folders = vm.folders,
+                        currentFolderId = vm.sessionFolder[r.s.id],
+                        onOpen = { vm.openTab(r.s.id); nav.toChat() },
+                        onMove = { folderId -> vm.moveSessionToFolder(r.s.id, folderId) },
+                        onNewFolder = { createFolderFor = r.s.id; createFolderOpen = true },
+                        onRename = { renameSessionFor = r.s },
+                    )
+                }
             }
-        },
-    ) { pad ->
-        Column(Modifier.fillMaxSize().padding(pad)) {
+        }
+
+        // ── Шапка поверх: баннер + заголовок + кнопки; подложка чуть видна ──
+        Column(
+            Modifier.align(Alignment.TopStart).fillMaxWidth()
+                .onSizeChanged { topBarPx = it.height }
+                .background(bg.copy(alpha = 0.9f))
+                .blockTouches()
+                .statusBarsPadding(),
+        ) {
             Box(Modifier.padding(horizontal = 16.dp)) { UpdateBanner(vm) }
             // Заголовок отдельной строкой — не «едет» от числа кнопок ниже
             Text(
@@ -148,63 +217,25 @@ fun SessionsScreen(vm: AppViewModel) {
                     Icon(Icons.Filled.Refresh, "Обновить", Modifier.size(20.dp))
                 }
             }
+        }
 
-            // Папки сверху (свёрнутые по умолчанию), ниже — сессии без папки.
-            // Разворачиваются только вручную (тап по строке папки).
-            val byFolder = vm.sessions.groupBy { vm.sessionFolder[it.id] }
-            val rows = buildList {
-                for (f in vm.folders) {
-                    val inside = byFolder[f.id].orEmpty()
-                    val expanded = f.id in vm.expandedFolders
-                    add(ListRow.Folder(f, inside.size, inside.any { it.running }, expanded))
-                    if (expanded) inside.forEach { add(ListRow.Session(it, inFolder = true)) }
-                }
-                byFolder[null].orEmpty().forEach { add(ListRow.Session(it, inFolder = false)) }
-            }
+        // ── Футер поверх снизу: индикатор загрузки + лимиты ──
+        Box(
+            Modifier.align(Alignment.BottomStart).fillMaxWidth()
+                .onSizeChanged { bottomBarPx = it.height }
+                .background(bg.copy(alpha = 0.9f))
+                .blockTouches()
+                .navigationBarsPadding(),
+        ) { SessionsFooter(vm) }
 
-            // Подъём списка наверх: при создании папки и когда сверху появляется
-            // другой элемент (сессия поднялась по дате / новая папка)
-            val listState = rememberLazyListState()
-            val topKey = rows.firstOrNull()?.let {
-                if (it is ListRow.Folder) "f:${it.folder.id}" else "s:${(it as ListRow.Session).s.id}"
-            }
-            LaunchedEffect(topKey, vm.folders.size) {
-                if (topKey != null) listState.animateScrollToItem(0)
-            }
-
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-            ) {
-                items(
-                    rows,
-                    key = { r -> if (r is ListRow.Folder) "f:${r.folder.id}" else "s:${(r as ListRow.Session).s.id}" },
-                ) { r ->
-                    when (r) {
-                        is ListRow.Folder -> FolderRow(
-                            row = r,
-                            onToggle = { vm.toggleFolder(r.folder.id) },
-                            onRename = { renameTarget = r.folder },
-                            onDelete = { deleteTarget = r.folder },
-                        )
-                        is ListRow.Session -> SessionCard(
-                            s = r.s,
-                            displayName = r.s.title,
-                            inFolder = r.inFolder,
-                            isOpen = r.s.id in vm.tabs,
-                            folders = vm.folders,
-                            currentFolderId = vm.sessionFolder[r.s.id],
-                            onOpen = { vm.openTab(r.s.id); nav.toChat() },
-                            onMove = { folderId -> vm.moveSessionToFolder(r.s.id, folderId) },
-                            onNewFolder = { createFolderFor = r.s.id; createFolderOpen = true },
-                            onRename = { renameSessionFor = r.s },
-                        )
-                    }
-                }
-            }
-            SessionsFooter(vm)
+        // Кнопка «новая сессия» — над футером, справа
+        FloatingActionButton(
+            onClick = { vm.newTab(); nav.toChat() },
+            containerColor = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.align(Alignment.BottomEnd)
+                .padding(end = 16.dp, bottom = bottomPad + 16.dp),
+        ) {
+            Icon(Icons.Filled.Add, "Новая сессия", tint = MaterialTheme.colorScheme.onPrimary)
         }
     }
 

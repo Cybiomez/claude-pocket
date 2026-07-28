@@ -165,7 +165,7 @@ fun ChatScreen(vm: AppViewModel) {
         Box(
             Modifier.align(Alignment.TopStart).fillMaxWidth()
                 .onSizeChanged { topBarPx = it.height }
-                .background(bg.copy(alpha = 0.75f))
+                .background(bg.copy(alpha = 0.9f))
                 .blockTouches()
                 .statusBarsPadding(),
         ) { TabsBar(vm) }
@@ -174,7 +174,7 @@ fun ChatScreen(vm: AppViewModel) {
         Column(
             Modifier.align(Alignment.BottomStart).fillMaxWidth()
                 .onSizeChanged { bottomBarPx = it.height }
-                .background(bg.copy(alpha = 0.75f))
+                .background(bg.copy(alpha = 0.9f))
                 .blockTouches()
                 .navigationBarsPadding()
                 .imePadding(),
@@ -191,7 +191,7 @@ fun ChatScreen(vm: AppViewModel) {
 // Гасит касания на всей площади композита: нажатия по прозрачной зоне панели
 // не проваливаются в ленту под ней. Интерактивные дети (кнопки, поле, скролл
 // чипов) получают событие раньше — им это не мешает.
-private fun Modifier.blockTouches(): Modifier = this.pointerInput(Unit) {
+internal fun Modifier.blockTouches(): Modifier = this.pointerInput(Unit) {
     awaitPointerEventScope {
         while (true) {
             awaitPointerEvent().changes.forEach { it.consume() }
