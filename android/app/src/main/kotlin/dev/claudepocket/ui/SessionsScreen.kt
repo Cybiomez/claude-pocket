@@ -29,11 +29,11 @@ import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -125,9 +125,6 @@ fun SessionsScreen(vm: AppViewModel) {
                     )
                 }
                 Spacer(Modifier.weight(1f))
-                IconButton(onClick = { createFolderFor = null; createFolderOpen = true }) {
-                    Icon(Icons.Filled.CreateNewFolder, "Новая папка", Modifier.size(20.dp))
-                }
                 // Смена темы: система / светлая / тёмная
                 IconButton(onClick = { vm.cycleTheme() }) {
                     Icon(
@@ -142,7 +139,11 @@ fun SessionsScreen(vm: AppViewModel) {
                 IconButton(onClick = { vm.openFileBrowser() }) {
                     Icon(Icons.Filled.FolderOpen, "Файлы сервера", Modifier.size(20.dp))
                 }
-                UpdateCheckButton(vm)
+                // Кнопка проверки новой версии убрана — о новой сборке сообщает
+                // авто-баннер UpdateBanner сверху. На её место — создание папки.
+                IconButton(onClick = { createFolderFor = null; createFolderOpen = true }) {
+                    Icon(Icons.Filled.CreateNewFolder, "Новая папка", Modifier.size(20.dp))
+                }
                 IconButton(onClick = { vm.refreshSessions(); vm.refreshUsage() }) {
                     Icon(Icons.Filled.Refresh, "Обновить", Modifier.size(20.dp))
                 }
