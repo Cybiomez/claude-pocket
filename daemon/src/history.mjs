@@ -52,6 +52,7 @@ async function readSessionMeta(file) {
       if (rec.type === 'ai-title' && rec.aiTitle) autoTitle = rec.aiTitle;
       if (rec.type === 'summary' && rec.summary) autoTitle = rec.summary;
       if (rec.isSidechain) continue;
+      if (rec.type === 'user' && isInjectedUser(rec)) continue;
       if (rec.type === 'user' || rec.type === 'assistant') {
         messageCount++;
         const text = extractText(rec.message?.content);
@@ -81,6 +82,25 @@ export function setCustomTitle(cwd, sessionId, customTitle) {
   return true;
 }
 
+// Служебные вставки Claude Code приходят записями роли user, но писал их не
+// человек, и в ленту чата их пускать нельзя. Три независимых признака:
+//   1) isMeta:true            — caveat'ы, system-reminder и подобное;
+//   2) origin.kind не 'human' — уведомления фоновых задач (task-notification);
+//      настоящий ввод — origin.kind === 'human' ЛИБО вовсе без origin (так шлёт
+//      приложение), поэтому «не-human» ловим только когда origin реально задан;
+//   3) текст-строка начинается с известного служебного тега — вывод и обёртки
+//      слэш-команд (/compact, /exit) не помечены ни isMeta, ни origin, а поле
+//      slug есть и у обычных сообщений, так что опознаём по самому тегу.
+const INJECTED_TAG = /^﻿?\s*<\/?(task-notification|local-command-[a-z]+|command-(?:name|message|args)|system-reminder)[\s>]/i;
+
+export function isInjectedUser(rec) {
+  if (rec.isMeta) return true;
+  const kind = rec.origin?.kind;
+  if (typeof kind === 'string' && kind !== 'human') return true;
+  const c = rec.message?.content;
+  return typeof c === 'string' && INJECTED_TAG.test(c);
+}
+
 function extractText(content) {
   if (typeof content === 'string') return content.trim() || null;
   if (!Array.isArray(content)) return null;
@@ -106,6 +126,9 @@ export async function readHistory(cwd, sessionId) {
       try { rec = JSON.parse(line); } catch { continue; }
       if (rec.isSidechain) continue;
       if (rec.type !== 'user' && rec.type !== 'assistant') continue;
+      // Служебные вставки (caveat, system-reminder, уведомления фоновых задач)
+      // приходят как user-записи, но их писал не человек — в ленту не пускаем.
+      if (rec.type === 'user' && isInjectedUser(rec)) continue;
       const msg = rec.message;
       if (!msg) continue;
       const blocks = normalizeBlocks(msg.content);
