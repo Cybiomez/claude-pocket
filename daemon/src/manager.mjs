@@ -79,15 +79,6 @@ export class Manager {
       .map(([k]) => k);
   }
 
-  // Закрыть живой процесс сессии (перед удалением транскрипта)
-  async drop(sessionKey) {
-    const a = this.active.get(sessionKey);
-    if (!a) return;
-    try { await a.q.interrupt(); } catch { /* уже не идёт */ }
-    try { a.input.close(); } catch { /* уже закрыт */ }
-    if (a.idleTimer) clearTimeout(a.idleTimer);
-    this.active.delete(sessionKey);
-  }
 
   async getUsage() {
     // Свежие данные — только с живого процесса; иначе кэш

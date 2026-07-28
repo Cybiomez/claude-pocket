@@ -28,7 +28,6 @@ import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
@@ -100,7 +99,6 @@ fun SessionsScreen(vm: AppViewModel) {
     var renameTarget by remember { mutableStateOf<FolderInfo?>(null) }
     var deleteTarget by remember { mutableStateOf<FolderInfo?>(null) }
     var renameSessionFor by remember { mutableStateOf<SessionInfo?>(null) }
-    var deleteSessionFor by remember { mutableStateOf<SessionInfo?>(null) }
 
     Scaffold(
         modifier = Modifier.systemBarsPadding(),
@@ -206,7 +204,6 @@ fun SessionsScreen(vm: AppViewModel) {
                             onMove = { folderId -> vm.moveSessionToFolder(r.s.id, folderId) },
                             onNewFolder = { createFolderFor = r.s.id; createFolderOpen = true },
                             onRename = { renameSessionFor = r.s },
-                            onDelete = { deleteSessionFor = r.s },
                         )
                     }
                 }
@@ -282,20 +279,6 @@ fun SessionsScreen(vm: AppViewModel) {
             onConfirm = { name -> vm.renameSession(s.id, name); renameSessionFor = null },
         )
     }
-
-    deleteSessionFor?.let { s ->
-        AlertDialog(
-            onDismissRequest = { deleteSessionFor = null },
-            title = { Text("Удалить сессию?") },
-            text = { Text("«${vm.sessionNames[s.id] ?: s.title}» будет удалена вместе с транскриптом на сервере. Это необратимо.") },
-            confirmButton = {
-                TextButton(onClick = { vm.deleteSession(s.id); deleteSessionFor = null }) {
-                    Text("Удалить", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = { TextButton(onClick = { deleteSessionFor = null }) { Text("Отмена") } },
-        )
-    }
 }
 
 // Свёрнутая папка — одна строка: значок, название, счётчик, меню
@@ -368,7 +351,6 @@ private fun SessionCard(
     onMove: (String?) -> Unit,
     onNewFolder: () -> Unit,
     onRename: () -> Unit,
-    onDelete: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val accent = MaterialTheme.colorScheme.primary
@@ -452,14 +434,6 @@ private fun SessionCard(
                         text = { Text("Переименовать") },
                         leadingIcon = { Icon(Icons.Filled.Edit, null, Modifier.size(20.dp)) },
                         onClick = { menuOpen = false; onRename() },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Удалить сессию", color = MaterialTheme.colorScheme.error) },
-                        leadingIcon = {
-                            Icon(Icons.Filled.Delete, null, Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.error)
-                        },
-                        onClick = { menuOpen = false; onDelete() },
                     )
                 }
             }

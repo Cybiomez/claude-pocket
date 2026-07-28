@@ -141,13 +141,6 @@ class ApiClient(private val baseUrl: String, private val token: String) {
         })
     )
 
-    // Удаление сессии вместе с транскриптом
-    suspend fun deleteSession(sessionId: String): Boolean = withContext(Dispatchers.IO) {
-        http.newCall(authedRequest("$baseUrl/api/sessions/$sessionId").delete().build()).execute().use { r ->
-            r.isSuccessful
-        }
-    }
-
     private fun parseFolders(o: JsonObject): FoldersDoc {
         val folders = o["folders"]?.jsonArray.orEmpty().mapNotNull { el ->
             val f = el.jsonObject

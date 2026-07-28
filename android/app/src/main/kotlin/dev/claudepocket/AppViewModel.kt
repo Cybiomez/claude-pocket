@@ -532,21 +532,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         pushFolders()
     }
 
-    // Удаление сессии вместе с транскриптом на сервере
-    fun deleteSession(sessionId: String) {
-        val a = api ?: return
-        // Убираем из открытых вкладок
-        if (sessionId in tabs) closeTab(sessionId)
-        sessionFolder = sessionFolder - sessionId
-        sessionNames = sessionNames - sessionId
-        sessions = sessions.filterNot { it.id == sessionId }
-        viewModelScope.launch {
-            runCatching { a.deleteSession(sessionId) }
-                .onSuccess { refreshSessions() }
-                .onFailure { toast("Не удалось удалить сессию: ${it.message ?: "нет связи"}") }
-        }
-    }
-
     fun createFolder(name: String): String? {
         val clean = name.trim().take(60)
         if (clean.isBlank()) return null

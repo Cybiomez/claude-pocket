@@ -38,19 +38,6 @@ export async function listSessions(cwd) {
   return out.map(({ file, ...rest }) => rest);
 }
 
-// Удаление транскрипта сессии. Возвращает true, если файл был и удалён.
-export function deleteSessionFile(cwd, sessionId) {
-  // sessionId — из клиента; берём только basename, чтобы не выйти за каталог
-  const safe = path.basename(sessionId).replace(/\.jsonl$/, '');
-  const file = path.join(projectsDir(cwd), safe + '.jsonl');
-  try {
-    fs.unlinkSync(file);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 async function readSessionMeta(file) {
   let title = null, lastText = null, firstUserText = null, messageCount = 0;
   try {

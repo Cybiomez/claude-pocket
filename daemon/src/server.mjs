@@ -5,7 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { loadConfig, loadToken, UPLOADS_DIR } from './config.mjs';
 import { openStore } from './store.mjs';
-import { listSessions, readHistory, deleteSessionFile } from './history.mjs';
+import { listSessions, readHistory } from './history.mjs';
 import { Manager, slimUsage } from './manager.mjs';
 
 const VERSION = '0.1.0';
@@ -98,19 +98,6 @@ const server = http.createServer(async (req, res) => {
     }
 
     let m;
-    // Удаление сессии вместе с транскриптом (ревизия из приложения)
-    if ((m = p.match(/^\/api\/sessions\/([^/]+)$/)) && req.method === 'DELETE') {
-      const key = resolveKey(m[1]);
-      await mgr.drop(key);
-      store.purgeSession(key);
-      const removed = deleteSessionFile(cfg.cwd, key);
-      // Убираем сессию из раскладки папок/имён
-      const doc = normalizeFolders(store.kvGet('folders'));
-      delete doc.assignments[key];
-      delete doc.names[key];
-      store.kvSet('folders', normalizeFolders(doc));
-      return json(res, 200, { ok: true, removed });
-    }
     if ((m = p.match(/^\/api\/sessions\/([^/]+)\/history$/)) && req.method === 'GET') {
       const key = resolveKey(m[1]);
       const items = await readHistory(cfg.cwd, key);

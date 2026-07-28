@@ -218,7 +218,9 @@ private fun TabsBar(vm: AppViewModel) {
         }
         for (t in vm.tabs) {
             val active = t == vm.activeTab
-            val title = vm.chats[t]?.title?.ifBlank { null }
+            // Кастомное имя (переименование) — в приоритете и здесь, чтобы имя было одно везде
+            val title = vm.sessionNames[t]
+                ?: vm.chats[t]?.title?.ifBlank { null }
                 ?: vm.sessions.firstOrNull { it.id == t }?.title
                 ?: if (t.startsWith("new-")) "Новая" else t.take(8)
             Row(
