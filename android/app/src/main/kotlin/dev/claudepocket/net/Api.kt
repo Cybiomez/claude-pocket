@@ -62,6 +62,15 @@ data class SessionSettings(val permissionMode: String, val model: String?, val e
 
 // Папки сессий. Раскладка хранится на сервере: folders — сами папки,
 // assignments — какая сессия в какой папке (sessionId -> folderId).
+// Интерактивный вопрос модели (AskUserQuestion)
+data class QOption(val label: String, val description: String)
+data class PocketQuestion(
+    val question: String,
+    val header: String,
+    val options: List<QOption>,
+    val multiSelect: Boolean,
+)
+
 data class FolderInfo(val id: String, val name: String)
 data class FoldersDoc(
     val folders: List<FolderInfo> = emptyList(),
@@ -136,6 +145,19 @@ class ApiClient(private val baseUrl: String, private val token: String) {
             })
         })
     )
+
+    // Ответ на опросник: answers — {текст вопроса: String (одиночный/свой) | List (множественный)}
+    suspend fun answerQuestion(sessionId: String, answers: Map<String, Any>): Boolean =
+        post("/api/sessions/$sessionId/answer", buildJsonObject {
+            put("answers", buildJsonObject {
+                answers.forEach { (q, v) ->
+                    when (v) {
+                        is String -> put(q, v)
+                        is List<*> -> putJsonArray(q) { v.forEach { add(it.toString()) } }
+                    }
+                }
+            })
+        })["ok"]?.jsonPrimitive?.boolean ?: false
 
     // Переименование сессии: пишет custom-title в транскрипт (синхронизируется в Claude Code)
     suspend fun setTitle(sessionId: String, title: String): Boolean =

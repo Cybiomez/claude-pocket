@@ -66,6 +66,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -140,7 +142,101 @@ fun ChatScreen(vm: AppViewModel) {
             }
         }
         StatusFooter(vm, chat)
+        if (chat.pendingQuestions.isNotEmpty()) {
+            QuestionCard(chat.pendingQuestions) { answers -> vm.answerQuestion(tab, answers) }
+        }
         InputBar(vm, tab, chat)
+    }
+}
+
+// Карточка живого опросника модели: вопросы показываем по одному, ответы копим,
+// на последнем — отправляем все разом. «Свой ответ» = вариант Other.
+@Composable
+private fun QuestionCard(questions: List<dev.claudepocket.net.PocketQuestion>, onSubmit: (Map<String, Any>) -> Unit) {
+    var index by remember(questions) { mutableStateOf(0) }
+    val answers = remember(questions) { mutableStateMapOf<String, Any>() }
+    val q = questions.getOrNull(index) ?: return
+    val selected = remember(index) { mutableStateListOf<String>() }
+    var custom by rememberSaveable(index) { mutableStateOf("") }
+
+    fun commit(answer: Any) {
+        answers[q.question] = answer
+        if (index < questions.lastIndex) index++ else onSubmit(answers.toMap())
+    }
+
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
+            .padding(14.dp),
+    ) {
+        if (questions.size > 1) Text(
+            "Вопрос ${index + 1} из ${questions.size}", fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+        )
+        if (q.header.isNotBlank()) Text(
+            q.header.uppercase(), fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Text(q.question, fontSize = 14.sp, modifier = Modifier.padding(top = 2.dp, bottom = 8.dp))
+
+        if (q.multiSelect) {
+            for (opt in q.options) {
+                val on = opt.label in selected
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                        .clickable { if (on) selected.remove(opt.label) else selected.add(opt.label) }
+                        .padding(vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    androidx.compose.material3.Checkbox(checked = on, onCheckedChange = {
+                        if (on) selected.remove(opt.label) else selected.add(opt.label)
+                    })
+                    QOptionText(opt)
+                }
+            }
+            OutlinedTextField(
+                custom, { custom = it }, label = { Text("Свой ответ (необязательно)") },
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp), singleLine = true,
+            )
+            androidx.compose.material3.Button(
+                onClick = {
+                    val list = selected.toMutableList()
+                    if (custom.isNotBlank()) list.add(custom.trim())
+                    commit(list.toList())
+                },
+                enabled = selected.isNotEmpty() || custom.isNotBlank(),
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            ) { Text(if (index < questions.lastIndex) "Далее" else "Готово") }
+        } else {
+            for (opt in q.options) {
+                androidx.compose.material3.OutlinedButton(
+                    onClick = { commit(opt.label) },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                ) { QOptionText(opt, Modifier.weight(1f)) }
+            }
+            Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    custom, { custom = it }, label = { Text("Свой ответ") },
+                    modifier = Modifier.weight(1f), singleLine = true,
+                )
+                IconButton(onClick = { if (custom.isNotBlank()) commit(custom.trim()) }, enabled = custom.isNotBlank()) {
+                    Icon(Icons.AutoMirrored.Filled.Send, "Отправить свой ответ")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QOptionText(opt: dev.claudepocket.net.QOption, modifier: Modifier = Modifier) {
+    Column(modifier.padding(start = 4.dp)) {
+        Text(opt.label, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        if (opt.description.isNotBlank()) Text(
+            opt.description, fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+        )
     }
 }
 
@@ -529,10 +625,12 @@ private fun InputBar(vm: AppViewModel, tab: String, chat: ChatState) {
                 TuneMenu(vm, tab, tuneOpen) { tuneOpen = false }
             }
             Spacer(Modifier.width(8.dp))
+            val awaitingAnswer = chat.pendingQuestions.isNotEmpty()
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it },
-                placeholder = { Text("Сообщение…") },
+                placeholder = { Text(if (awaitingAnswer) "Ответьте на вопрос выше…" else "Сообщение…") },
+                enabled = !awaitingAnswer,
                 modifier = Modifier.weight(1f),
                 maxLines = 6,
                 shape = RoundedCornerShape(22.dp),
@@ -544,7 +642,7 @@ private fun InputBar(vm: AppViewModel, tab: String, chat: ChatState) {
                     modifier = Modifier.padding(bottom = 4.dp).size(48.dp).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.error.copy(alpha = 0.15f)),
                 ) { Icon(Icons.Filled.Stop, "Прервать", tint = MaterialTheme.colorScheme.error) }
             } else {
-                val canSend = text.isNotBlank() || attachments.isNotEmpty()
+                val canSend = (text.isNotBlank() || attachments.isNotEmpty()) && !awaitingAnswer
                 IconButton(
                     onClick = {
                         val t = text.trim()

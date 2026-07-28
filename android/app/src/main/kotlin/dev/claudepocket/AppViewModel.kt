@@ -12,6 +12,7 @@ import dev.claudepocket.net.Block
 import dev.claudepocket.net.ContextInfo
 import dev.claudepocket.net.FolderInfo
 import dev.claudepocket.net.FoldersDoc
+import dev.claudepocket.net.PocketQuestion
 import dev.claudepocket.net.SessionInfo
 import dev.claudepocket.net.SlashCommand
 import dev.claudepocket.net.SseState
@@ -62,6 +63,8 @@ class ChatState {
     var permissionMode by mutableStateOf("bypassPermissions")
     var effort by mutableStateOf("medium")
     var model by mutableStateOf<String?>(null)
+    // Живой опросник модели (AskUserQuestion) — ждёт ответа; пусто = вопроса нет
+    var pendingQuestions by mutableStateOf<List<PocketQuestion>>(emptyList())
 }
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
@@ -363,6 +366,23 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             "delta" -> {
                 chat.streaming += data["text"]?.jsonPrimitive?.contentOrNull ?: ""
             }
+            "question" -> {
+                chat.pendingQuestions = data["questions"]?.jsonArray.orEmpty().mapNotNull { el ->
+                    val o = el.jsonObject
+                    val q = o["question"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                    val opts = o["options"]?.jsonArray.orEmpty().mapNotNull { oe ->
+                        val oo = oe.jsonObject
+                        val label = oo["label"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                        dev.claudepocket.net.QOption(label, oo["description"]?.jsonPrimitive?.contentOrNull ?: "")
+                    }
+                    PocketQuestion(
+                        q,
+                        o["header"]?.jsonPrimitive?.contentOrNull ?: "",
+                        opts,
+                        o["multiSelect"]?.jsonPrimitive?.booleanOrNull ?: false,
+                    )
+                }
+            }
             "assistant" -> {
                 val blocks = parseBlocks(data["blocks"]!!.jsonArray)
                 chat.streaming = ""
@@ -654,6 +674,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         chat.permissionMode = mode
         val a = api ?: return
         viewModelScope.launch { runCatching { a.saveSettings(tab, mode, null, null) } }
+    }
+
+    // Ответ на живой опросник: answers — {текст вопроса: String | List<String>}
+    fun answerQuestion(tab: String, answers: Map<String, Any>) {
+        val chat = chats[tab] ?: return
+        val a = api ?: return
+        chat.pendingQuestions = emptyList()
+        viewModelScope.launch {
+            runCatching { a.answerQuestion(tab, answers) }
+                .onFailure { toast("Не удалось отправить ответ: ${it.message ?: "нет связи"}") }
+        }
     }
 
     // model == null → «по умолчанию»; на сервер уходит "" (демон превращает в null)

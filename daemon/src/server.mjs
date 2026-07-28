@@ -102,6 +102,13 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { sessionId: key, items, status: mgr.status(key) });
     }
 
+    // Ответ на живой опросник модели (AskUserQuestion)
+    if ((m = p.match(/^\/api\/sessions\/([^/]+)\/answer$/)) && req.method === 'POST') {
+      const key = resolveKey(m[1]);
+      const body = JSON.parse((await readBody(req)).toString() || '{}');
+      const ok = mgr.answerQuestion(key, body.answers ?? {});
+      return json(res, 200, { ok });
+    }
     if ((m = p.match(/^\/api\/sessions\/([^/]+)\/interrupt$/)) && req.method === 'POST') {
       const key = resolveKey(m[1]);
       await mgr.markInterrupted(key);
