@@ -499,9 +499,11 @@ private fun UserBubble(text: String) {
             Modifier.widthIn(max = 320.dp)
                 // Скруглено со всех сторон, маленький «хвостик» у нижнего угла со стороны отправителя
                 .clip(RoundedCornerShape(18.dp, 18.dp, 6.dp, 18.dp))
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f))
+                // Базовый терракотовый (primary) из палитры; текст onPrimary для контраста.
+                // Полупрозрачный слой над тёмным фоном выглядел грязно-тёмным.
+                .background(MaterialTheme.colorScheme.primary)
                 .padding(horizontal = 14.dp, vertical = 9.dp),
-        ) { Text(text, fontSize = 14.sp) }
+        ) { Text(text, fontSize = 14.sp, color = MaterialTheme.colorScheme.onPrimary) }
     }
 }
 
