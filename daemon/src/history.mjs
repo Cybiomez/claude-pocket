@@ -39,16 +39,20 @@ export async function listSessions(cwd) {
 }
 
 async function readSessionMeta(file) {
-  let title = null, lastText = null, firstUserText = null, messageCount = 0;
+  // customTitle — имя, заданное пользователем в Claude Code (CLI/десктоп), высший
+  // приоритет. autoTitle — ai-title/summary. Берём последнюю запись каждого вида.
+  let customTitle = null, autoTitle = null, lastText = null, firstUserText = null, messageCount = 0;
   try {
     const rl = readline.createInterface({ input: fs.createReadStream(file), crlfDelay: Infinity });
     for await (const line of rl) {
       if (!line.trim()) continue;
       let rec;
       try { rec = JSON.parse(line); } catch { continue; }
-      if (rec.type === 'ai-title' && rec.aiTitle) title = rec.aiTitle;
-      if (rec.type === 'summary' && rec.summary) title = rec.summary;
+      if (rec.type === 'custom-title' && rec.customTitle != null) customTitle = rec.customTitle;
+      if (rec.type === 'ai-title' && rec.aiTitle) autoTitle = rec.aiTitle;
+      if (rec.type === 'summary' && rec.summary) autoTitle = rec.summary;
       if (rec.isSidechain) continue;
+      if (rec.type === 'user' && isInjectedUser(rec)) continue;
       if (rec.type === 'user' || rec.type === 'assistant') {
         messageCount++;
         const text = extractText(rec.message?.content);
@@ -59,8 +63,42 @@ async function readSessionMeta(file) {
       }
     }
   } catch { /* файл мог исчезнуть */ }
-  if (!title && firstUserText) title = firstUserText.slice(0, 60);
+  // Пустой customTitle («») означает сброс к авто-имени
+  const title = (customTitle && customTitle.trim())
+    || autoTitle
+    || (firstUserText && firstUserText.slice(0, 60))
+    || null;
   return { title: title ?? '(без названия)', lastText: lastText?.slice(0, 120) ?? '', messageCount };
+}
+
+// Дописать запись custom-title в транскрипт — то же, что переименование в Claude Code.
+// Пустая строка сбрасывает к авто-имени.
+export function setCustomTitle(cwd, sessionId, customTitle) {
+  const safe = path.basename(sessionId).replace(/\.jsonl$/, '');
+  const file = path.join(projectsDir(cwd), safe + '.jsonl');
+  if (!fs.existsSync(file)) return false;
+  const rec = JSON.stringify({ type: 'custom-title', customTitle: String(customTitle), sessionId: safe });
+  fs.appendFileSync(file, rec + '\n');
+  return true;
+}
+
+// Служебные вставки Claude Code приходят записями роли user, но писал их не
+// человек, и в ленту чата их пускать нельзя. Три независимых признака:
+//   1) isMeta:true            — caveat'ы, system-reminder и подобное;
+//   2) origin.kind не 'human' — уведомления фоновых задач (task-notification);
+//      настоящий ввод — origin.kind === 'human' ЛИБО вовсе без origin (так шлёт
+//      приложение), поэтому «не-human» ловим только когда origin реально задан;
+//   3) текст-строка начинается с известного служебного тега — вывод и обёртки
+//      слэш-команд (/compact, /exit) не помечены ни isMeta, ни origin, а поле
+//      slug есть и у обычных сообщений, так что опознаём по самому тегу.
+const INJECTED_TAG = /^﻿?\s*<\/?(task-notification|local-command-[a-z]+|command-(?:name|message|args)|system-reminder)[\s>]/i;
+
+export function isInjectedUser(rec) {
+  if (rec.isMeta) return true;
+  const kind = rec.origin?.kind;
+  if (typeof kind === 'string' && kind !== 'human') return true;
+  const c = rec.message?.content;
+  return typeof c === 'string' && INJECTED_TAG.test(c);
 }
 
 function extractText(content) {
@@ -88,6 +126,9 @@ export async function readHistory(cwd, sessionId) {
       try { rec = JSON.parse(line); } catch { continue; }
       if (rec.isSidechain) continue;
       if (rec.type !== 'user' && rec.type !== 'assistant') continue;
+      // Служебные вставки (caveat, system-reminder, уведомления фоновых задач)
+      // приходят как user-записи, но их писал не человек — в ленту не пускаем.
+      if (rec.type === 'user' && isInjectedUser(rec)) continue;
       const msg = rec.message;
       if (!msg) continue;
       const blocks = normalizeBlocks(msg.content);

@@ -10,6 +10,9 @@ import androidx.lifecycle.viewModelScope
 import dev.claudepocket.net.ApiClient
 import dev.claudepocket.net.Block
 import dev.claudepocket.net.ContextInfo
+import dev.claudepocket.net.FolderInfo
+import dev.claudepocket.net.FoldersDoc
+import dev.claudepocket.net.PocketQuestion
 import dev.claudepocket.net.SessionInfo
 import dev.claudepocket.net.SlashCommand
 import dev.claudepocket.net.SseState
@@ -26,6 +29,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.booleanOrNull
+import java.util.UUID
 import dev.claudepocket.net.parseBlocks
 
 sealed interface ConnState {
@@ -55,9 +59,12 @@ class ChatState {
     var loading by mutableStateOf(true)
     var error by mutableStateOf<String?>(null)
     var title by mutableStateOf("")
-    // Текущие настройки хода: режим прав и уровень усилий (для подсветки в меню)
+    // Текущие настройки хода: режим прав, уровень усилий, модель (null = дефолт CLI)
     var permissionMode by mutableStateOf("bypassPermissions")
     var effort by mutableStateOf("medium")
+    var model by mutableStateOf<String?>(null)
+    // Живой опросник модели (AskUserQuestion) — ждёт ответа; пусто = вопроса нет
+    var pendingQuestions by mutableStateOf<List<PocketQuestion>>(emptyList())
 }
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
@@ -76,6 +83,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var sessionsLoading by mutableStateOf(false)
     var usage by mutableStateOf<UsageInfo?>(null)
     var commands by mutableStateOf<List<SlashCommand>>(emptyList())
+
+    // Папки сессий: раскладка хранится на сервере (одинакова на всех устройствах).
+    // expandedFolders — только состояние сеанса: по умолчанию всё свёрнуто.
+    var folders by mutableStateOf<List<FolderInfo>>(emptyList())
+    var sessionFolder by mutableStateOf<Map<String, String>>(emptyMap())
+    var expandedFolders by mutableStateOf<Set<String>>(emptySet())
 
     // Вкладки: ключ = sessionId либо temp 'new-...'
     var tabs by mutableStateOf<List<String>>(emptyList())
@@ -216,6 +229,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 startSse()
                 refreshSessions()
                 refreshUsage()
+                loadFolders()
                 viewModelScope.launch {
                     runCatching { commands = a.commands() }
                 }
@@ -352,6 +366,23 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             "delta" -> {
                 chat.streaming += data["text"]?.jsonPrimitive?.contentOrNull ?: ""
             }
+            "question" -> {
+                chat.pendingQuestions = data["questions"]?.jsonArray.orEmpty().mapNotNull { el ->
+                    val o = el.jsonObject
+                    val q = o["question"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                    val opts = o["options"]?.jsonArray.orEmpty().mapNotNull { oe ->
+                        val oo = oe.jsonObject
+                        val label = oo["label"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                        dev.claudepocket.net.QOption(label, oo["description"]?.jsonPrimitive?.contentOrNull ?: "")
+                    }
+                    PocketQuestion(
+                        q,
+                        o["header"]?.jsonPrimitive?.contentOrNull ?: "",
+                        opts,
+                        o["multiSelect"]?.jsonPrimitive?.booleanOrNull ?: false,
+                    )
+                }
+            }
             "assistant" -> {
                 val blocks = parseBlocks(data["blocks"]!!.jsonArray)
                 chat.streaming = ""
@@ -480,9 +511,81 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val a = api ?: return
         viewModelScope.launch {
             sessionsLoading = true
-            runCatching { sessions = a.sessions() }
+            // Порядок задаём и на клиенте: свежие изменения сверху, независимо
+            // от версии демона на сервере
+            runCatching { sessions = a.sessions().sortedByDescending { it.mtime } }
             sessionsLoading = false
         }
+    }
+
+    // --- Папки сессий ---
+
+    fun loadFolders() {
+        val a = api ?: return
+        viewModelScope.launch {
+            runCatching { a.folders() }.onSuccess {
+                folders = it.folders
+                sessionFolder = it.assignments
+            }
+        }
+    }
+
+    // Раскладка целиком уезжает на сервер; локальное состояние уже обновлено,
+    // ответ сервера принимаем как истину (он чистит битые ссылки).
+    private fun pushFolders() {
+        val a = api ?: return
+        viewModelScope.launch {
+            runCatching { a.saveFolders(FoldersDoc(folders, sessionFolder)) }.onSuccess {
+                folders = it.folders
+                sessionFolder = it.assignments
+            }.onFailure { toast("Не удалось сохранить папки: ${it.message ?: "нет связи"}") }
+        }
+    }
+
+    // Переименование сессии — пишет custom-title в транскрипт (как в Claude Code),
+    // имя синхронизируется на все устройства. Пустое имя — сброс к авто-имени.
+    fun renameSession(sessionId: String, name: String) {
+        val a = api ?: return
+        viewModelScope.launch {
+            runCatching { a.setTitle(sessionId, name.trim().take(200)) }
+                .onSuccess { refreshSessions() }
+                .onFailure { toast("Не удалось переименовать: ${it.message ?: "нет связи"}") }
+        }
+    }
+
+    fun createFolder(name: String): String? {
+        val clean = name.trim().take(60)
+        if (clean.isBlank()) return null
+        val id = "f-" + UUID.randomUUID().toString().take(8)
+        folders = folders + FolderInfo(id, clean)
+        pushFolders()
+        return id
+    }
+
+    fun renameFolder(id: String, name: String) {
+        val clean = name.trim().take(60)
+        if (clean.isBlank()) return
+        folders = folders.map { if (it.id == id) it.copy(name = clean) else it }
+        pushFolders()
+    }
+
+    // Папку убираем, сессии из неё возвращаются в общий список
+    fun deleteFolder(id: String) {
+        folders = folders.filterNot { it.id == id }
+        sessionFolder = sessionFolder.filterValues { it != id }
+        expandedFolders = expandedFolders - id
+        pushFolders()
+    }
+
+    // folderId == null — вынуть сессию из папки
+    fun moveSessionToFolder(sessionId: String, folderId: String?) {
+        sessionFolder = if (folderId == null) sessionFolder - sessionId
+        else sessionFolder + (sessionId to folderId)
+        pushFolders()
+    }
+
+    fun toggleFolder(id: String) {
+        expandedFolders = if (id in expandedFolders) expandedFolders - id else expandedFolders + id
     }
 
     private var refreshScheduled = false
@@ -549,6 +652,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 runCatching { a.settings(sessionId) }.getOrNull()?.let { s ->
                     chat.permissionMode = s.permissionMode
                     s.effort?.let { chat.effort = it }
+                    chat.model = s.model
                 }
             } catch (e: Exception) {
                 chat.error = e.message
@@ -570,6 +674,25 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         chat.permissionMode = mode
         val a = api ?: return
         viewModelScope.launch { runCatching { a.saveSettings(tab, mode, null, null) } }
+    }
+
+    // Ответ на живой опросник: answers — {текст вопроса: String | List<String>}
+    fun answerQuestion(tab: String, answers: Map<String, Any>) {
+        val chat = chats[tab] ?: return
+        val a = api ?: return
+        chat.pendingQuestions = emptyList()
+        viewModelScope.launch {
+            runCatching { a.answerQuestion(tab, answers) }
+                .onFailure { toast("Не удалось отправить ответ: ${it.message ?: "нет связи"}") }
+        }
+    }
+
+    // model == null → «по умолчанию»; на сервер уходит "" (демон превращает в null)
+    fun setModel(tab: String, model: String?) {
+        val chat = chats[tab] ?: return
+        chat.model = model
+        val a = api ?: return
+        viewModelScope.launch { runCatching { a.saveSettings(tab, null, model ?: "", null) } }
     }
 
     fun sendMessage(tabKey: String, text: String) {

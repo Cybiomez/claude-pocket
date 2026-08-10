@@ -5,7 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { loadConfig, loadToken, UPLOADS_DIR } from './config.mjs';
 import { openStore } from './store.mjs';
-import { listSessions, readHistory } from './history.mjs';
+import { listSessions, readHistory, setCustomTitle } from './history.mjs';
 import { Manager, slimUsage } from './manager.mjs';
 
 const VERSION = '0.1.0';
@@ -41,6 +41,30 @@ function resolveKey(key) {
   return key;
 }
 
+// Приводит документ папок к ожидаемому виду и самоисцеляется:
+// выкидывает мусор, дубли id и привязки к несуществующим папкам.
+function normalizeFolders(doc) {
+  const seen = new Set();
+  const folders = [];
+  for (const f of Array.isArray(doc?.folders) ? doc.folders : []) {
+    const id = typeof f?.id === 'string' ? f.id.trim() : '';
+    const name = typeof f?.name === 'string' ? f.name.trim() : '';
+    if (!id || !name || seen.has(id)) continue;
+    seen.add(id);
+    folders.push({ id, name: name.slice(0, 60) });
+  }
+  const assignments = {};
+  const src = doc?.assignments;
+  if (src && typeof src === 'object' && !Array.isArray(src)) {
+    for (const [sessionId, folderId] of Object.entries(src)) {
+      if (typeof sessionId !== 'string' || typeof folderId !== 'string') continue;
+      if (!seen.has(folderId)) continue;   // папку удалили — сессия уходит в общий список
+      assignments[sessionId] = folderId;
+    }
+  }
+  return { folders, assignments };
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   const p = url.pathname;
@@ -64,12 +88,27 @@ const server = http.createServer(async (req, res) => {
     }
 
     let m;
+    // Переименование сессии — пишем custom-title в транскрипт (как в Claude Code),
+    // поэтому имя синхронизируется на все устройства. Пустая строка — сброс.
+    if ((m = p.match(/^\/api\/sessions\/([^/]+)\/title$/)) && req.method === 'POST') {
+      const key = resolveKey(m[1]);
+      const body = JSON.parse((await readBody(req)).toString() || '{}');
+      const ok = setCustomTitle(cfg.cwd, key, (body.title ?? '').toString().slice(0, 200));
+      return json(res, ok ? 200 : 404, { ok });
+    }
     if ((m = p.match(/^\/api\/sessions\/([^/]+)\/history$/)) && req.method === 'GET') {
       const key = resolveKey(m[1]);
       const items = await readHistory(cfg.cwd, key);
       return json(res, 200, { sessionId: key, items, status: mgr.status(key) });
     }
 
+    // Ответ на живой опросник модели (AskUserQuestion)
+    if ((m = p.match(/^\/api\/sessions\/([^/]+)\/answer$/)) && req.method === 'POST') {
+      const key = resolveKey(m[1]);
+      const body = JSON.parse((await readBody(req)).toString() || '{}');
+      const ok = mgr.answerQuestion(key, body.answers ?? {});
+      return json(res, 200, { ok });
+    }
     if ((m = p.match(/^\/api\/sessions\/([^/]+)\/interrupt$/)) && req.method === 'POST') {
       const key = resolveKey(m[1]);
       await mgr.markInterrupted(key);
@@ -94,6 +133,8 @@ const server = http.createServer(async (req, res) => {
       }
       if (req.method === 'POST') {
         const body = JSON.parse((await readBody(req)).toString() || '{}');
+        // Пустая модель — сброс к дефолту CLI
+        if (body.model === '') body.model = null;
         store.setSettings(key, body);
         return json(res, 200, { ok: true });
       }
@@ -106,6 +147,21 @@ const server = http.createServer(async (req, res) => {
       const sessionId = body.sessionId ? resolveKey(body.sessionId) : null;
       const { jobId, sessionKey } = mgr.submit(sessionId, text, body.attachments ?? []);
       return json(res, 200, { jobId, sessionKey });
+    }
+
+    // Папки сессий: раскладка живёт на сервере (kv в SQLite), поэтому одинакова
+    // на любом устройстве и переживает переустановку приложения.
+    // Документ: { folders: [{id, name}], assignments: { sessionId: folderId } }
+    if (p === '/api/folders') {
+      if (req.method === 'GET') {
+        return json(res, 200, normalizeFolders(store.kvGet('folders')));
+      }
+      if (req.method === 'PUT') {
+        const body = JSON.parse((await readBody(req)).toString() || '{}');
+        const doc = normalizeFolders(body);
+        store.kvSet('folders', doc);
+        return json(res, 200, doc);
+      }
     }
 
     if (p === '/api/usage' && req.method === 'GET') {

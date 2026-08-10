@@ -27,6 +27,7 @@ export class Manager {
     this.store = store;
     this.log = log;
     this.active = new Map();   // sessionKey -> {q, input, sessionId, idleTimer, currentJobId, startedAt}
+    this.pending = new Map();   // sessionId -> {resolve} для интерактивных вопросов (AskUserQuestion)
     this.listeners = new Set(); // SSE подписчики: fn(event)
     this.seq = 0;
     this.recent = [];          // кольцевой буфер последних событий для reconnect
@@ -61,10 +62,25 @@ export class Manager {
   }
 
   async interrupt(sessionKey) {
+    this.cancelPending(sessionKey);
     const a = this.active.get(sessionKey);
     if (!a) return false;
     try { await a.q.interrupt(); } catch (e) { this.log('interrupt err:', e.message); }
     return true;
+  }
+
+  // Ответ на живой интерактивный вопрос (AskUserQuestion). answers — объект
+  // {текст вопроса: выбранный вариант | [варианты] | свой текст}.
+  answerQuestion(sessionKey, answers) {
+    const p = this.pending.get(sessionKey);
+    if (!p) return false;
+    p.resolve(answers);
+    return true;
+  }
+
+  cancelPending(sessionKey) {
+    const p = this.pending.get(sessionKey);
+    if (p) p.resolve(null);
   }
 
   status(sessionKey) {
@@ -78,6 +94,7 @@ export class Manager {
       .filter(([, a]) => a.currentJobId != null)
       .map(([k]) => k);
   }
+
 
   async getUsage() {
     // Свежие данные — только с живого процесса; иначе кэш
@@ -155,11 +172,25 @@ export class Manager {
     const isNew = key.startsWith('new-');
     const settings = this.store.getSettings(key) ?? {};
     const input = makeInput();
+    // canUseTool ловит интерактивные вопросы модели (AskUserQuestion) и ждёт ответ
+    // из приложения; всё остальное — разрешаем (режим «Авто»). AskUserQuestion
+    // доходит сюда в любом режиме прав. Пл\.-режим строгих правок этим путём не
+    // навязывается (осознанное упрощение, docs/decisions.md).
+    const canUseTool = async (toolName, toolInput) => {
+      if (toolName !== 'AskUserQuestion') return { behavior: 'allow', updatedInput: toolInput };
+      const sid = a?.sessionId ?? key;
+      const questions = toolInput?.questions ?? [];
+      this.emit('question', sid, { questions });
+      const answers = await new Promise(resolve => { this.pending.set(sid, { resolve }); });
+      this.pending.delete(sid);
+      if (answers == null) return { behavior: 'deny', message: 'Вопрос отменён' };
+      return { behavior: 'allow', updatedInput: { questions, answers } };
+    };
     const options = {
       cwd: this.cfg.cwd,
       permissionMode: settings.permission_mode ?? this.cfg.permissionMode,
-      allowDangerouslySkipPermissions: true,
       includePartialMessages: true,
+      canUseTool,
       ...(settings.model ?? this.cfg.model ? { model: settings.model ?? this.cfg.model } : {}),
       ...(settings.effort ?? this.cfg.effort ? { effort: settings.effort ?? this.cfg.effort } : {}),
       ...(isNew ? {} : { resume: key }),

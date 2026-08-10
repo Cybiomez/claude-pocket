@@ -40,11 +40,15 @@ object UpdateChecker {
         .connectTimeout(10, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).build()
 
     suspend fun checkIfDue(ctx: Context, force: Boolean = false): UpdateInfo? {
+        val ch = channel(ctx)
         val p = ctx.getSharedPreferences("updates", Context.MODE_PRIVATE)
         val last = p.getLong("lastCheck", 0)
-        if (!force && System.currentTimeMillis() - last < CHECK_INTERVAL_MS) return null
+        // На канале dev проверяем при каждом подключении — тестеру нужны свежие
+        // сборки сразу, без суточного интервала. На latest интервал сохраняется.
+        val throttled = ch != CHANNEL_DEV && System.currentTimeMillis() - last < CHECK_INTERVAL_MS
+        if (!force && throttled) return null
         p.edit().putLong("lastCheck", System.currentTimeMillis()).apply()
-        return try { check(channel(ctx)) } catch (_: Exception) { null }
+        return try { check(ch) } catch (_: Exception) { null }
     }
 
     // null = обновления нет; сетевые/прочие ошибки пробрасываются наружу.
@@ -63,10 +67,19 @@ object UpdateChecker {
         http.newCall(req).execute().use { r ->
             if (!r.isSuccessful) throw IllegalStateException("GitHub ответил HTTP ${r.code}")
             val el = json.parseToJsonElement(r.body!!.string())
-            // dev — берём самый свежий релиз (не draft), latest — единственный объект
+            // dev — берём релиз с максимальной версией (не draft), latest — единственный
+            // объект. Порядок списка /releases по версии НЕ гарантирован: GitHub
+            // сортирует теги как строки, поэтому dev.10 встаёт ниже dev.2…dev.9
+            // (второй символ '1' < '2'). Брать первый элемент нельзя — выбираем
+            // максимум сами через isNewer.
             val o = if (channel == CHANNEL_DEV)
-                el.jsonArray.map { it.jsonObject }.firstOrNull { it["draft"]?.jsonPrimitive?.contentOrNull != "true" }
-                    ?: return@withContext null
+                el.jsonArray.map { it.jsonObject }
+                    .filter { it["draft"]?.jsonPrimitive?.contentOrNull != "true" }
+                    .reduceOrNull { best, cur ->
+                        val bt = best["tag_name"]?.jsonPrimitive?.contentOrNull?.removePrefix("v") ?: ""
+                        val ct = cur["tag_name"]?.jsonPrimitive?.contentOrNull?.removePrefix("v") ?: ""
+                        if (isNewer(ct, bt)) cur else best
+                    } ?: return@withContext null
             else el.jsonObject
             val tag = o["tag_name"]?.jsonPrimitive?.contentOrNull ?: return@withContext null
             val version = tag.removePrefix("v")

@@ -1,9 +1,19 @@
 package dev.claudepocket.ui
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.text.selection.DisableSelection
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,10 +22,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -34,7 +46,9 @@ import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Slider
 import androidx.compose.material.icons.filled.Stop
@@ -42,52 +56,294 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.claudepocket.AppViewModel
 import dev.claudepocket.ChatItem
 import dev.claudepocket.ChatState
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 @Composable
 fun ChatScreen(vm: AppViewModel) {
     val tab = vm.activeTab ?: return
     val chat = vm.chats[tab] ?: return
+    val scope = rememberCoroutineScope()
 
-    Column(Modifier.fillMaxSize().systemBarsPadding().imePadding()) {
-        TabsBar(vm)
-        Box(Modifier.weight(1f)) {
+    val density = LocalDensity.current
+    val bg = MaterialTheme.colorScheme.background
+    // Список едет под панелями (Telegram-style), поэтому высоты шапки и низа
+    // замеряем и отдаём в contentPadding — сообщения не обрезаются за интерфейсом.
+    var topBarPx by remember { mutableStateOf(0) }
+    var bottomBarPx by remember { mutableStateOf(0) }
+    val topPad = with(density) { topBarPx.toDp() }
+    val bottomPad = with(density) { bottomBarPx.toDp() }
+
+    Box(Modifier.fillMaxSize()) {
+        // ── Лента на всю высоту, под полупрозрачными панелями ──
+        // key(tab) — состояние прокрутки своё у каждой вкладки
+        key(tab) {
+            val listState = rememberLazyListState()
+            val total = chat.items.size + (if (chat.streaming.isNotBlank()) 1 else 0)
+            // Пользователь и так внизу?
+            val atBottom by remember {
+                derivedStateOf {
+                    val info = listState.layoutInfo
+                    val last = info.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf true
+                    last.index >= info.totalItemsCount - 2
+                }
+            }
+            // Вход в диалог — сразу к последнему сообщению (мгновенно, один раз)
+            var didInitial by remember { mutableStateOf(false) }
+            LaunchedEffect(chat.loading, total) {
+                if (!didInitial && !chat.loading && total > 0) {
+                    listState.scrollToItem(total - 1); didInitial = true
+                }
+            }
+            // Дальше автопрокрутка — только если пользователь внизу
+            LaunchedEffect(total, chat.streaming.length / 200) {
+                if (didInitial && total > 0 && atBottom) listState.animateScrollToItem(total - 1)
+            }
+
             when {
                 chat.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                else -> MessageList(chat)
+                else -> {
+                    MessageList(chat, listState, topPad, bottomPad)
+                    // Скроллбар — только в видимой зоне между панелями
+                    ChatScrollbar(
+                        listState,
+                        Modifier.align(Alignment.CenterEnd).padding(top = topPad, bottom = bottomPad),
+                    )
+                    // Кнопка «в самый низ» — когда список не внизу; над панелью ввода
+                    if (!atBottom && total > 1) {
+                        FilledIconButton(
+                            onClick = { scope.launch { listState.animateScrollToItem(total - 1) } },
+                            modifier = Modifier.align(Alignment.BottomEnd)
+                                .padding(end = 16.dp, bottom = bottomPad + 16.dp).size(40.dp),
+                        ) { Icon(Icons.Filled.KeyboardArrowDown, "В самый низ", Modifier.size(22.dp)) }
+                    }
+                }
             }
         }
-        StatusFooter(vm, chat)
-        InputBar(vm, tab, chat)
+
+        // ── Шапка поверх: сама подложка панели чуть видна (без градиента), сами
+        // элементы непрозрачны; тач под панелью в ленту не проходит (blockTouches) ──
+        Box(
+            Modifier.align(Alignment.TopStart).fillMaxWidth()
+                .onSizeChanged { topBarPx = it.height }
+                .background(bg.copy(alpha = 0.9f))
+                .blockTouches()
+                .statusBarsPadding(),
+        ) { TabsBar(vm) }
+
+        // ── Низ поверх: футер + опросник + ввод; подложка чуть видна, без градиента ──
+        Column(
+            Modifier.align(Alignment.BottomStart).fillMaxWidth()
+                .onSizeChanged { bottomBarPx = it.height }
+                .background(bg.copy(alpha = 0.9f))
+                .blockTouches()
+                .navigationBarsPadding()
+                .imePadding(),
+        ) {
+            StatusFooter(vm, chat)
+            if (chat.pendingQuestions.isNotEmpty()) {
+                QuestionCard(chat.pendingQuestions) { answers -> vm.answerQuestion(tab, answers) }
+            }
+            InputBar(vm, tab, chat)
+        }
+    }
+}
+
+// Гасит касания на всей площади композита: нажатия по прозрачной зоне панели
+// не проваливаются в ленту под ней. Интерактивные дети (кнопки, поле, скролл
+// чипов) получают событие раньше — им это не мешает.
+internal fun Modifier.blockTouches(): Modifier = this.pointerInput(Unit) {
+    awaitPointerEventScope {
+        while (true) {
+            awaitPointerEvent().changes.forEach { it.consume() }
+        }
+    }
+}
+
+// Карточка живого опросника модели: вопросы показываем по одному, ответы копим,
+// на последнем — отправляем все разом. «Свой ответ» = вариант Other.
+@Composable
+private fun QuestionCard(questions: List<dev.claudepocket.net.PocketQuestion>, onSubmit: (Map<String, Any>) -> Unit) {
+    var index by remember(questions) { mutableStateOf(0) }
+    val answers = remember(questions) { mutableStateMapOf<String, Any>() }
+    val q = questions.getOrNull(index) ?: return
+    val selected = remember(index) { mutableStateListOf<String>() }
+    var custom by rememberSaveable(index) { mutableStateOf("") }
+
+    fun commit(answer: Any) {
+        answers[q.question] = answer
+        if (index < questions.lastIndex) index++ else onSubmit(answers.toMap())
+    }
+
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
+            .padding(14.dp),
+    ) {
+        if (questions.size > 1) Text(
+            "Вопрос ${index + 1} из ${questions.size}", fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+        )
+        if (q.header.isNotBlank()) Text(
+            q.header.uppercase(), fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Text(q.question, fontSize = 14.sp, modifier = Modifier.padding(top = 2.dp, bottom = 8.dp))
+
+        if (q.multiSelect) {
+            for (opt in q.options) {
+                val on = opt.label in selected
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                        .clickable { if (on) selected.remove(opt.label) else selected.add(opt.label) }
+                        .padding(vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    androidx.compose.material3.Checkbox(checked = on, onCheckedChange = {
+                        if (on) selected.remove(opt.label) else selected.add(opt.label)
+                    })
+                    QOptionText(opt)
+                }
+            }
+            OutlinedTextField(
+                custom, { custom = it }, label = { Text("Свой ответ (необязательно)") },
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp), singleLine = true,
+                shape = RoundedCornerShape(22.dp),
+            )
+            androidx.compose.material3.Button(
+                onClick = {
+                    val list = selected.toMutableList()
+                    if (custom.isNotBlank()) list.add(custom.trim())
+                    commit(list.toList())
+                },
+                enabled = selected.isNotEmpty() || custom.isNotBlank(),
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            ) { Text(if (index < questions.lastIndex) "Далее" else "Готово") }
+        } else {
+            for (opt in q.options) {
+                androidx.compose.material3.OutlinedButton(
+                    onClick = { commit(opt.label) },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                ) { QOptionText(opt, Modifier.weight(1f)) }
+            }
+            Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    custom, { custom = it }, label = { Text("Свой ответ") },
+                    modifier = Modifier.weight(1f), singleLine = true,
+                    shape = RoundedCornerShape(22.dp),
+                )
+                IconButton(onClick = { if (custom.isNotBlank()) commit(custom.trim()) }, enabled = custom.isNotBlank()) {
+                    Icon(Icons.AutoMirrored.Filled.Send, "Отправить свой ответ")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QOptionText(opt: dev.claudepocket.net.QOption, modifier: Modifier = Modifier) {
+    Column(modifier.padding(start = 4.dp)) {
+        Text(opt.label, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        if (opt.description.isNotBlank()) Text(
+            opt.description, fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+        )
+    }
+}
+
+// Тонкий скроллбар справа: заметен при прокрутке, при нажатии расширяется и тянется.
+// Широкая прозрачная зона захвата (22dp) — чтобы можно было ухватить пальцем.
+@Composable
+private fun ChatScrollbar(listState: LazyListState, modifier: Modifier = Modifier) {
+    val scope = rememberCoroutineScope()
+    var dragging by remember { mutableStateOf(false) }
+    val metrics by remember {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            Triple(info.totalItemsCount, info.visibleItemsInfo.size, listState.firstVisibleItemIndex)
+        }
+    }
+    val (total, visible, first) = metrics
+    if (total == 0 || visible >= total) return
+    // Виден слабо всегда (чтобы было за что взяться), ярче при прокрутке, ещё ярче при захвате
+    val alpha by animateFloatAsState(
+        if (dragging) 0.7f else if (listState.isScrollInProgress) 0.4f else 0.16f, label = "sbAlpha",
+    )
+    val barW by animateDpAsState(if (dragging) 10.dp else 4.dp, label = "sbWidth")
+    var trackH by remember { mutableStateOf(1) }
+    val thumbFrac = (visible.toFloat() / total).coerceIn(0.06f, 1f)
+    val span = (total - visible).coerceAtLeast(1)
+    val posFrac = (first.toFloat() / span).coerceIn(0f, 1f)
+
+    fun scrollToFrac(f: Float) {
+        val idx = (f.coerceIn(0f, 1f) * span).roundToInt().coerceIn(0, total - 1)
+        scope.launch { listState.scrollToItem(idx) }
+    }
+
+    // Зона захвата 22dp; перетаскивание где угодно по ней двигает бегунок
+    Box(
+        modifier.fillMaxHeight().width(22.dp).padding(vertical = 4.dp)
+            .onSizeChanged { trackH = it.height }
+            .draggable(
+                orientation = Orientation.Vertical,
+                state = rememberDraggableState { delta ->
+                    val denom = trackH * (1f - thumbFrac)
+                    if (denom > 0f) scrollToFrac(posFrac + delta / denom)
+                },
+                onDragStarted = { dragging = true },
+                onDragStopped = { dragging = false },
+            ),
+    ) {
+        Box(
+            Modifier
+                .fillMaxHeight(thumbFrac)
+                .width(barW)
+                .align(Alignment.TopEnd)
+                .offset { IntOffset(0, ((trackH * (1f - thumbFrac)) * posFrac).roundToInt()) }
+                .clip(RoundedCornerShape(3.dp))
+                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = alpha)),
+        )
     }
 }
 
@@ -98,29 +354,34 @@ private fun TabsBar(vm: AppViewModel) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        IconButton(onClick = { vm.activeTab = null }, modifier = Modifier.size(34.dp)) {
+        val nav = LocalPagerNav.current
+        IconButton(onClick = { nav.toList() }, modifier = Modifier.size(34.dp)) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, "К списку", modifier = Modifier.size(20.dp))
         }
         for (t in vm.tabs) {
             val active = t == vm.activeTab
-            val title = vm.chats[t]?.title?.ifBlank { null }
-                ?: vm.sessions.firstOrNull { it.id == t }?.title
+            // Имя из списка сессий (там уже custom-title) — в приоритете, чтобы было одно везде
+            val title = vm.sessions.firstOrNull { it.id == t }?.title
+                ?: vm.chats[t]?.title?.ifBlank { null }
                 ?: if (t.startsWith("new-")) "Новая" else t.take(8)
+            // Активная вкладка — базовый терракотовый (primary из палитры), текст и
+            // иконки на ней — onPrimary для контраста; неактивная — surfaceVariant
+            val tabFg = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
             Row(
                 Modifier
                     .clip(RoundedCornerShape(16.dp))
-                    .background(if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant)
+                    .background(if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
                     .clickable { vm.activeTab = t }
                     .padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (vm.chats[t]?.running == true) {
-                    CircularProgressIndicator(Modifier.size(10.dp), strokeWidth = 1.5.dp)
+                    CircularProgressIndicator(Modifier.size(10.dp), strokeWidth = 1.5.dp, color = tabFg)
                     Spacer(Modifier.width(6.dp))
                 }
-                Text(title.take(18), fontSize = 12.sp, maxLines = 1)
+                Text(title.take(18), fontSize = 12.sp, maxLines = 1, color = tabFg)
                 IconButton(onClick = { vm.closeTab(t) }, modifier = Modifier.size(24.dp)) {
-                    Icon(Icons.Filled.Close, "Закрыть", modifier = Modifier.size(13.dp))
+                    Icon(Icons.Filled.Close, "Закрыть", modifier = Modifier.size(13.dp), tint = tabFg)
                 }
             }
         }
@@ -131,27 +392,36 @@ private fun TabsBar(vm: AppViewModel) {
 }
 
 @Composable
-private fun MessageList(chat: ChatState) {
-    val listState = rememberLazyListState()
-    val total = chat.items.size + (if (chat.streaming.isNotBlank()) 1 else 0)
-    LaunchedEffect(total, chat.streaming.length / 200) {
-        if (total > 0) listState.animateScrollToItem(total - 1)
-    }
-    LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        items(chat.items, key = { it.itemKey }) { item -> ChatItemView(item) }
-        if (chat.streaming.isNotBlank()) {
-            item(key = "streaming") { AssistantBubble { MarkdownText(chat.streaming) } }
-        } else if (chat.running) {
-            item(key = "typing") {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(8.dp)) {
-                    CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Работаю…", fontSize = 13.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
+private fun MessageList(
+    chat: ChatState, listState: androidx.compose.foundation.lazy.LazyListState,
+    topPad: Dp, bottomPad: Dp,
+) {
+    // Оборачиваем в SelectionContainer — иначе текст сообщений нельзя выделить и скопировать
+    SelectionContainer(Modifier.fillMaxSize()) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            // Верх/низ = высота панелей: первое и последнее сообщение полностью
+            // выезжают из-под шапки и панели ввода, а не прячутся за ними
+            contentPadding = PaddingValues(
+                start = 12.dp, end = 12.dp,
+                top = topPad + 8.dp, bottom = bottomPad + 8.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(chat.items, key = { it.itemKey }) { item -> ChatItemView(item) }
+            if (chat.streaming.isNotBlank()) {
+                item(key = "streaming") { AssistantBubble { MarkdownText(chat.streaming) } }
+            } else if (chat.running) {
+                item(key = "typing") {
+                    // Индикатор набора выделять незачем — исключаем из копирования
+                    DisableSelection {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(8.dp)) {
+                            CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Работаю…", fontSize = 13.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
+                        }
+                    }
                 }
             }
         }
@@ -229,9 +499,11 @@ private fun UserBubble(text: String) {
             Modifier.widthIn(max = 320.dp)
                 // Скруглено со всех сторон, маленький «хвостик» у нижнего угла со стороны отправителя
                 .clip(RoundedCornerShape(18.dp, 18.dp, 6.dp, 18.dp))
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f))
+                // Базовый терракотовый (primary) из палитры; текст onPrimary для контраста.
+                // Полупрозрачный слой над тёмным фоном выглядел грязно-тёмным.
+                .background(MaterialTheme.colorScheme.primary)
                 .padding(horizontal = 14.dp, vertical = 9.dp),
-        ) { Text(text, fontSize = 14.sp) }
+        ) { Text(text, fontSize = 14.sp, color = MaterialTheme.colorScheme.onPrimary) }
     }
 }
 
@@ -308,6 +580,15 @@ private fun StatusFooter(vm: AppViewModel, chat: ChatState) {
             )
         }
         Spacer(Modifier.weight(1f))
+        // Версия реально работающей модели в конце строки (из getContextUsage),
+        // напр. «opus-4-8» — префикс «claude-» убираем для краткости
+        val model = ctx?.model?.removePrefix("claude-")
+        if (!model.isNullOrBlank()) {
+            Text(
+                model, fontSize = 10.5.sp, maxLines = 1,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+            )
+        }
     }
 }
 
@@ -335,6 +616,7 @@ private fun SquareBtn(
         modifier
             .size(size)
             .clip(RoundedCornerShape(7.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)   // 100% заливка, не просвечивает
             .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f), RoundedCornerShape(7.dp))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -398,7 +680,7 @@ private fun InputBar(vm: AppViewModel, tab: String, chat: ChatState) {
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
                     )
                 }
-                DropdownMenu(expanded = slashOpen, onDismissRequest = { slashOpen = false }) {
+                AppMenu(expanded = slashOpen, onDismissRequest = { slashOpen = false }) {
                     val cmds = vm.commands.take(30)
                     if (cmds.isEmpty()) DropdownMenuItem(text = { Text("Команды появятся после первого хода") }, onClick = { slashOpen = false })
                     for (c in cmds) DropdownMenuItem(
@@ -418,22 +700,31 @@ private fun InputBar(vm: AppViewModel, tab: String, chat: ChatState) {
                 TuneMenu(vm, tab, tuneOpen) { tuneOpen = false }
             }
             Spacer(Modifier.width(8.dp))
+            val awaitingAnswer = chat.pendingQuestions.isNotEmpty()
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it },
-                placeholder = { Text("Сообщение…") },
+                placeholder = { Text(if (awaitingAnswer) "Ответьте на вопрос выше…" else "Сообщение…") },
+                enabled = !awaitingAnswer,
                 modifier = Modifier.weight(1f),
                 maxLines = 6,
                 shape = RoundedCornerShape(22.dp),
+                // Непрозрачная заливка поля — сообщения под ним не просвечивают
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    disabledContainerColor = MaterialTheme.colorScheme.surface,
+                ),
             )
             Spacer(Modifier.width(6.dp))
             if (chat.running) {
                 IconButton(
                     onClick = { vm.interrupt(tab) },
-                    modifier = Modifier.padding(bottom = 4.dp).size(48.dp).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.error.copy(alpha = 0.15f)),
+                    modifier = Modifier.padding(bottom = 4.dp).size(48.dp).clip(RoundedCornerShape(24.dp))
+                        .background(MaterialTheme.colorScheme.error.copy(alpha = 0.15f).compositeOver(MaterialTheme.colorScheme.background)),
                 ) { Icon(Icons.Filled.Stop, "Прервать", tint = MaterialTheme.colorScheme.error) }
             } else {
-                val canSend = text.isNotBlank() || attachments.isNotEmpty()
+                val canSend = (text.isNotBlank() || attachments.isNotEmpty()) && !awaitingAnswer
                 IconButton(
                     onClick = {
                         val t = text.trim()
@@ -441,7 +732,8 @@ private fun InputBar(vm: AppViewModel, tab: String, chat: ChatState) {
                     },
                     enabled = canSend,
                     modifier = Modifier.padding(bottom = 4.dp).size(48.dp).clip(RoundedCornerShape(24.dp))
-                        .background(if (canSend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)),
+                        // Базовый терракотовый (primary); неактивность видна по потускневшей иконке (enabled=canSend)
+                        .background(MaterialTheme.colorScheme.primary),
                 ) { Icon(Icons.AutoMirrored.Filled.Send, "Отправить", tint = MaterialTheme.colorScheme.onPrimary) }
             }
         }
@@ -468,8 +760,17 @@ private fun TuneMenu(vm: AppViewModel, tab: String, open: Boolean, dismiss: () -
         "acceptEdits" to "Авто-правки",
         "plan" to "План (без выполнения)",
     )
+    // null — модель по умолчанию (как в CLI); остальные — псевдонимы семейств,
+    // их понимает и CLI, и SDK (opus/sonnet/haiku/fable → последняя версия семейства)
+    val models = listOf(
+        null to "По умолчанию",
+        "fable" to "Fable 5",
+        "opus" to "Opus",
+        "sonnet" to "Sonnet",
+        "haiku" to "Haiku",
+    )
 
-    DropdownMenu(expanded = open, onDismissRequest = dismiss) {
+    AppMenu(expanded = open, onDismissRequest = dismiss) {
         // Effort ползунком с пунктами; подпись уровня меняется над ним
         val idx = efforts.indexOf(chat.effort).coerceAtLeast(0)
         Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).width(240.dp)) {
@@ -504,6 +805,23 @@ private fun TuneMenu(vm: AppViewModel, tab: String, open: Boolean, dismiss: () -
                     else Spacer(Modifier.size(24.dp))
                 },
                 onClick = { vm.setPermissionMode(tab, mode); dismiss() },
+            )
+        }
+        HorizontalDivider()
+        Text("Модель", fontSize = 11.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+        for ((id, label) in models) {
+            val selected = chat.model == id
+            DropdownMenuItem(
+                text = {
+                    Text(label, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                },
+                leadingIcon = {
+                    if (selected) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary)
+                    else Spacer(Modifier.size(24.dp))
+                },
+                onClick = { vm.setModel(tab, id); dismiss() },
             )
         }
     }
