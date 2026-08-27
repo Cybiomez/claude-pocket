@@ -1,4 +1,4 @@
-# Claude Pocket
+# MyCelium ClaudePocket
 
 Android-клиент для собственного **Claude Code** на своём сервере. Не веб-версия Claude —
 телефон подключается по SSH к твоему серверу и работает с теми же сессиями, что CLI и VSCode.
