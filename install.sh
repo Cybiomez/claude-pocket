@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Установка серверной части Claude Pocket.
-# Движок сессий вынесен в отдельный модуль-ядро mycelium-mind — этот скрипт его ставит.
+# Движок сессий вынесен в отдельный модуль-ядро mycelium-claude-daemon — этот скрипт его ставит.
 # Запуск:  ./install.sh   (или  curl -fsSL <адрес>/install.sh | bash)
 set -euo pipefail
 
-MIND_REPO="${MYCELIUM_MIND_REPO:-https://github.com/Cybiomez/mycelium-mind.git}"
-MIND_DIR="$HOME/.mycelium-mind/repo"
+MIND_REPO="${MYCELIUM_MIND_REPO:-https://github.com/Cybiomez/mycelium-claude-daemon.git}"
+MIND_DIR="$HOME/.mycelium-claude-daemon/repo"
 
 say() { printf '\033[1;36m[claude-pocket]\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31m[claude-pocket]\033[0m %s\n' "$*" >&2; exit 1; }
@@ -17,8 +17,8 @@ command -v npm >/dev/null 2>&1 || die "Не найден npm"
 command -v git >/dev/null 2>&1 || die "Не найден git"
 command -v claude >/dev/null 2>&1 || die "Не найден Claude Code CLI (npm i -g @anthropic-ai/claude-code && claude)"
 
-# Ставим/обновляем ядро mycelium-mind и его сервис (демон на 127.0.0.1:8787)
-say "Ставлю движок сессий (mycelium-mind)…"
+# Ставим/обновляем ядро mycelium-claude-daemon и его сервис (демон на 127.0.0.1:8787)
+say "Ставлю движок сессий (mycelium-claude-daemon)…"
 mkdir -p "$(dirname "$MIND_DIR")"
 if [ -d "$MIND_DIR/.git" ]; then
   git -C "$MIND_DIR" pull --ff-only

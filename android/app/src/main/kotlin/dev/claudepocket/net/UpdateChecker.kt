@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit
 data class UpdateInfo(val version: String, val apkUrl: String, val releaseUrl: String, val notes: String)
 
 object UpdateChecker {
-    const val REPO = "Cybiomez/claude-pocket"
+    const val REPO = "Cybiomez/mycelium-claude-pocket"
     const val REPO_URL = "https://github.com/$REPO"
     private const val CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000L
 

@@ -9,7 +9,7 @@
          в облако (Google-бэкап) они уходить не должны -->
     <application
         android:allowBackup="false"
-        android:label="Claude Pocket"
+        android:label="MyCelium ClaudePocket"
         android:icon="@mipmap/ic_launcher"
         android:theme="@style/Theme.ClaudePocket"
         android:usesCleartextTraffic="true">
